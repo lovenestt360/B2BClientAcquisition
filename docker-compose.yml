@@ -1,0 +1,81 @@
+# Self-hosted stack. No SaaS dependencies.
+#   docker compose up -d                       → db + app + worker (simulation mode)
+#   docker compose --profile ai up -d          → + Ollama
+#   docker compose --profile voice up -d       → + faster-whisper STT + Chatterbox TTS
+name: acquisition
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-acquisition}
+  APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?set APP_ENCRYPTION_KEY}
+  COOKIE_SECURE: ${COOKIE_SECURE:-true}
+  APP_TIMEZONE: ${APP_TIMEZONE:-Africa/Johannesburg}
+  SIMULATION_MODE: ${SIMULATION_MODE:-true}
+  ALLOW_AUTOMATED_OUTREACH: ${ALLOW_AUTOMATED_OUTREACH:-false}
+  JOBS_MODE: queue
+  LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+  OLLAMA_URL: http://ollama:11434
+  OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+  STT_PROVIDER: ${STT_PROVIDER:-mock}
+  STT_URL: http://stt:8001
+  TTS_PROVIDER: ${TTS_PROVIDER:-mock}
+  TTS_URL: http://tts:8002
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-acquisition}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app}"]
+      interval: 5s
+      retries: 10
+
+  app:
+    build: .
+    image: acquisition-app:latest
+    restart: unless-stopped
+    environment: *app-env
+    depends_on: { db: { condition: service_healthy } }
+    ports: ["127.0.0.1:3000:3000"] # put a TLS reverse proxy in front (docs/DEPLOYMENT.md)
+
+  worker:
+    image: acquisition-app:latest
+    restart: unless-stopped
+    environment: *app-env
+    command: ["npx", "tsx", "src/worker/index.ts"]
+    healthcheck: { disable: true }
+    depends_on: { db: { condition: service_healthy }, app: { condition: service_started } }
+
+  ollama:
+    image: ollama/ollama:0.6.8
+    profiles: [ai]
+    restart: unless-stopped
+    volumes: [ollama:/root/.ollama]
+    # GPU: uncomment on an NVIDIA host with the container toolkit
+    # deploy: { resources: { reservations: { devices: [{ capabilities: [gpu] }] } } }
+
+  stt:
+    build: ./voice-services/stt
+    profiles: [voice]
+    restart: unless-stopped
+    environment:
+      WHISPER_MODEL: ${WHISPER_MODEL:-small}
+      WHISPER_LANGUAGE: ${WHISPER_LANGUAGE:-en}
+    volumes: [models:/models]
+
+  tts:
+    build: ./voice-services/tts
+    profiles: [voice]
+    restart: unless-stopped
+    volumes:
+      - models:/models
+      - ./voice-services/tts/voices:/voices:ro
+
+volumes:
+  pgdata:
+  ollama:
+  models:

@@ -5,6 +5,9 @@ import { requireUser } from "@/server/auth/current";
 import { can } from "@/server/auth/rbac";
 import { changeStageAction } from "@/app/actions/crm";
 import { PageHeader, StageBadge, fmtDate } from "@/components/ui";
+import { ActionForm } from "@/components/ActionForm";
+import { checkEligibility } from "@/server/compliance/eligibility";
+import { permissionAction, queueCallAction } from "@/app/actions/outreach";
 
 const STAGES = ["NEW", "RESEARCHING", "QUALIFIED", "CONTACTED", "ENGAGED", "MEETING_BOOKED", "PROPOSAL", "WON", "LOST", "DISQUALIFIED"];
 
@@ -16,6 +19,9 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
     include: { company: true, phoneNumbers: { orderBy: { isPrimary: "desc" } } },
   });
   if (!c) notFound();
+  const channels = ["SMS", "VOICE_MANUAL", "EMAIL", "VOICE_AUTOMATED"] as const;
+  const elig = await Promise.all(channels.map((ch) => checkEligibility(prisma, { contactId: id, channel: ch })));
+  const permissions = await prisma.marketingPermission.findMany({ where: { contactId: id }, orderBy: { capturedAt: "desc" } });
   const history = await prisma.auditLog.findMany({
     where: { entityType: "contact", entityId: id },
     orderBy: { createdAt: "desc" },
@@ -72,6 +78,49 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           )}
         </section>
       </div>
+
+      <section className="card space-y-3 text-sm" aria-labelledby="outreach">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="outreach" className="font-semibold">Outreach eligibility &amp; consent</h2>
+          <div className="flex flex-wrap gap-2">
+            <Link className="btn-secondary" href={`/sms/${c.id}`}>SMS conversation</Link>
+            {can(user.role, "outreach.draft") && c.phoneNumbers.length > 0 && (
+              <ActionForm action={queueCallAction} submitLabel="Queue call" className="flex gap-2">
+                <input type="hidden" name="contactId" value={c.id} />
+              </ActionForm>
+            )}
+          </div>
+        </div>
+        <ul className="grid gap-2 sm:grid-cols-2" data-testid="eligibility">
+          {channels.map((ch, i) => (
+            <li key={ch} className={`rounded-lg p-2 ${elig[i].eligible ? "bg-green-50" : "bg-amber-50"}`}>
+              <strong>{ch.replace("_", " ").toLowerCase()}</strong>: {elig[i].eligible ? `allowed now (${elig[i].basis?.replace("_", " ")})` : elig[i].reasons.join("; ")}
+            </li>
+          ))}
+        </ul>
+        {permissions.length > 0 && (
+          <ul className="space-y-1">
+            {permissions.map((p) => (
+              <li key={p.id}><strong>{p.channel}</strong> {p.status.toLowerCase()}{p.basis ? ` (${p.basis.toLowerCase()})` : ""} · {fmtDate(p.capturedAt)} · <span className="text-slate-500">{p.evidence}</span></li>
+            ))}
+          </ul>
+        )}
+        {can(user.role, "compliance.manage") && (
+          <details>
+            <summary className="cursor-pointer text-brand-700">Record consent / opt-out</summary>
+            <ActionForm action={permissionAction} submitLabel="Record" className="mt-2 space-y-2">
+              <input type="hidden" name="contactId" value={c.id} />
+              <div className="grid gap-2 sm:grid-cols-3">
+                <select className="input" name="channel" aria-label="Channel"><option>SMS</option><option>EMAIL</option><option>VOICE_MANUAL</option><option>VOICE_AUTOMATED</option></select>
+                <select className="input" name="status" aria-label="Status"><option value="GRANTED">Granted</option><option value="WITHDRAWN">Withdrawn / opted out</option><option value="REFUSED">Refused</option></select>
+                <select className="input" name="basis" aria-label="Basis"><option value="CONSENT">Consent</option><option value="EXISTING_CUSTOMER">Existing customer</option><option value="">n/a</option></select>
+              </div>
+              <input className="input" name="evidence" required placeholder="Evidence: where and how (e.g. signed form ref, web form URL, reply text)" aria-label="Evidence" />
+              <input className="input" type="datetime-local" name="capturedAt" aria-label="Captured at" />
+            </ActionForm>
+          </details>
+        )}
+      </section>
 
       <section className="card text-sm">
         <h2 className="mb-2 font-semibold">History</h2>

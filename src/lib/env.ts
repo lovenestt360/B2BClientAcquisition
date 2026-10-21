@@ -6,7 +6,7 @@ const bool = z
   .transform((v) => v === "true" || v === "1");
 
 const schema = z.object({
-  DATABASE_URL: z.string().min(1),
+  DATABASE_URL: z.string().optional(), // read by Prisma directly
   APP_ENCRYPTION_KEY: z.string().optional(),
   COOKIE_SECURE: bool,
   APP_TIMEZONE: z.string().default("Africa/Johannesburg"),

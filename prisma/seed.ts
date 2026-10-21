@@ -81,6 +81,23 @@ async function main() {
   }
 
   await seedProviders(prisma);
+
+  // Simulation-only extras: sender identity and consent on some dummy leads.
+  if (process.env.SIMULATION_MODE !== "false") {
+    await prisma.systemSetting.upsert({
+      where: { key: "sender.profile" },
+      update: {},
+      create: { key: "sender.profile", value: { businessName: "Demo Co", optOutText: "Reply STOP to opt out" } },
+    });
+    const dummies = await prisma.contact.findMany({ where: { isSimulated: true }, orderBy: { email: "asc" } });
+    for (const c of dummies.slice(0, 4)) {
+      if (await prisma.marketingPermission.count({ where: { contactId: c.id } })) continue;
+      await prisma.marketingPermission.create({
+        data: { contactId: c.id, channel: "SMS", status: "GRANTED", basis: "CONSENT", evidence: "SIMULATED seed consent (dummy lead)", capturedAt: new Date() },
+      });
+    }
+    if (dummies[4]) await prisma.contact.update({ where: { id: dummies[4].id }, data: { isExistingCustomer: true } });
+  }
   console.log(`Seeded ${users.length} users, ${COMPANIES.length} companies, ${PEOPLE.length} simulated contacts.`);
   console.log(`Sign in as ${adminEmail} (password from SEED_ADMIN_PASSWORD).`);
 }

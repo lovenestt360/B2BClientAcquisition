@@ -59,3 +59,22 @@ export function fmtDate(d: Date | string | null | undefined) {
   if (!d) return "—";
   return new Date(d).toLocaleString("en-ZA", { timeZone: process.env.APP_TIMEZONE ?? "Africa/Johannesburg", dateStyle: "medium", timeStyle: "short" });
 }
+
+const DELIVERY: Record<string, [string, string]> = {
+  NOT_ATTEMPTED: ["not attempted", "bg-slate-100 text-slate-700"],
+  ATTEMPTED: ["attempted", "bg-sky-100 text-sky-800"],
+  ACCEPTED: ["accepted by provider", "bg-blue-100 text-blue-800"],
+  DELIVERED: ["delivered (receipt)", "bg-green-100 text-green-800"],
+  FAILED: ["failed", "bg-red-100 text-red-800"],
+  UNKNOWN: ["delivery unknown", "bg-amber-100 text-amber-900"],
+};
+
+/** Delivery state with its evidence level spelled out. */
+export function DeliveryBadge({ state }: { state: string }) {
+  const [label, cls] = DELIVERY[state] ?? [state, ""];
+  return <span className={`badge ${cls}`} title="Delivered is only shown with an independent receipt">{label}</span>;
+}
+
+export function StatusBadge({ status }: { status: string }) {
+  return <span className="badge bg-slate-100 text-slate-700">{status.replace(/_/g, " ").toLowerCase()}</span>;
+}

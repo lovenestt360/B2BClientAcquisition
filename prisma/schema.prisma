@@ -353,19 +353,45 @@ model ProviderConfig {
   carrierAuthorized  Boolean      @default(false)
   carrierAuthRef     String? // reference to written authorisation
   carrierAuthAt      DateTime?
+  lineId             String?
+  line               CarrierLine? @relation(fields: [lineId], references: [id], onDelete: SetNull)
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
-
-  airtime AirtimeEntry[]
 
   @@map("provider_configs")
 }
 
+/// A real-world mobile line (e.g. Telkom prepaid eSIM in an iPhone).
+/// Holds no SIM provisioning secrets: never store eSIM QR/activation codes, ICCID-based
+/// credentials or PUK codes here.
+model CarrierLine {
+  id                 String   @id @default(cuid())
+  key                String   @unique // telkom_prepaid_iphone
+  operator           String // Telkom South Africa
+  plan               String // prepaid
+  simType            String // esim | physical
+  device             String // iPhone
+  country            String   @default("ZA")
+  ownNumberE164      String? // the line's own MSISDN (optional, user-entered)
+  testNumberE164     String? // where simulated-lead sms:/tel: tests go (user's own second phone), optional
+  smsRateCents       Int? // user-entered estimate per SMS segment
+  callRatePerMinCents Int? // user-entered estimate per minute
+  currency           String   @default("ZAR")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  providers ProviderConfig[]
+  airtime   AirtimeEntry[]
+
+  @@map("carrier_lines")
+}
+
 model AirtimeEntry {
   id          String         @id @default(cuid())
-  providerId  String
-  provider    ProviderConfig @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  kind        String // topup | sms | call | data | adjustment
+  lineId      String
+  line        CarrierLine    @relation(fields: [lineId], references: [id], onDelete: Cascade)
+  kind        String // topup | sms_estimate | call_estimate | adjustment | balance_check
+  estimated   Boolean        @default(false) // true when derived from user-entered rates
   amountCents Int // positive = top-up, negative = spend
   currency    String         @default("ZAR")
   note        String?
@@ -374,7 +400,7 @@ model AirtimeEntry {
   recordedById String?
   createdAt   DateTime       @default(now())
 
-  @@index([providerId, createdAt])
+  @@index([lineId, createdAt])
   @@map("airtime_entries")
 }
 
@@ -586,6 +612,7 @@ model Call {
   outcome       CallOutcome?
   notes         String?
   guidance      Json? // AI talking points shown to the caller
+  engineState   Json? // voice conversation engine snapshot (sandbox / SIP)
   durationSec   Int? // user-entered for manual calls
   costCents     Int?
   voiceAgentId  String?

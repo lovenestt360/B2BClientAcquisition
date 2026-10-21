@@ -11,3 +11,5 @@ voice-services/**/__pycache__
 voice-services/**/models
 uploads/
 .next-e2e
+voice-services/tts/voices/*
+!voice-services/tts/voices/README.md

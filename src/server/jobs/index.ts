@@ -6,6 +6,7 @@ import { handlers, type QueueName } from "./handlers";
 /** Retry policy per queue. Handlers must be idempotent: they can run more than once. */
 export const QUEUE_POLICIES: Record<QueueName, { retryLimit: number; retryDelay: number; retryBackoff: boolean }> = {
   "import.commit": { retryLimit: 3, retryDelay: 10, retryBackoff: true },
+  "sms.generate_drafts": { retryLimit: 2, retryDelay: 15, retryBackoff: true },
 };
 
 let boss: PgBoss | null = null;

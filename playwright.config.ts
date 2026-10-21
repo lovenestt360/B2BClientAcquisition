@@ -37,6 +37,8 @@ export default defineConfig({
       TTS_PROVIDER: "mock",
       APP_ENCRYPTION_KEY: process.env.APP_ENCRYPTION_KEY ?? Buffer.alloc(32, 3).toString("base64"),
       NEXT_DIST_DIR: ".next-e2e",
+      // Wednesday 10:00 SAST, inside CPA contact hours, so runs are deterministic at any time.
+      SIMULATION_CLOCK: "2026-10-21T08:00:00Z",
     },
   },
 });
