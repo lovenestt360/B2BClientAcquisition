@@ -1,0 +1,13 @@
+node_modules
+.next
+.env
+.env.local
+coverage
+playwright-report
+test-results
+*.tsbuildinfo
+next-env.d.ts
+voice-services/**/__pycache__
+voice-services/**/models
+uploads/
+.next-e2e

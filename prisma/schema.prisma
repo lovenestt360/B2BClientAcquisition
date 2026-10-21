@@ -1,0 +1,715 @@
+// B2B Client Acquisition Platform — relational schema.
+// See docs/ARCHITECTURE.md for module boundaries and state machines.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Auth & RBAC ─────────────────────────────
+
+enum Role {
+  ADMIN
+  MANAGER
+  OPERATOR
+  VIEWER
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         Role      @default(OPERATOR)
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions      Session[]
+  auditLogs     AuditLog[]
+  ownedContacts Contact[]  @relation("ContactOwner")
+
+  @@map("users")
+}
+
+model Session {
+  id         String   @id // sha256 of the opaque cookie token
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  ipAddress  String?
+  userAgent  String?
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorType  String   @default("user") // user | system | job
+  action     String // e.g. contact.create, sms.confirm_sent
+  entityType String
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ───────────────────────────── CRM ─────────────────────────────
+
+enum PipelineStage {
+  NEW
+  RESEARCHING
+  QUALIFIED
+  CONTACTED
+  ENGAGED
+  MEETING_BOOKED
+  PROPOSAL
+  WON
+  LOST
+  DISQUALIFIED
+}
+
+model Company {
+  id             String        @id @default(cuid())
+  name           String
+  normalizedName String
+  domain         String?       @unique // normalised, no scheme/www
+  website        String?
+  industry       String?
+  sizeBand       String?
+  country        String? // ISO-3166 alpha-2
+  city           String?
+  description    String?
+  stage          PipelineStage @default(NEW)
+  sourceType     String        @default("manual") // manual | import | research
+  sourceRef      String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  contacts    Contact[]
+  researchFacts ResearchFact[]
+  leadScores  LeadScore[]
+
+  @@index([normalizedName])
+  @@map("companies")
+}
+
+model Contact {
+  id               String        @id @default(cuid())
+  companyId        String?
+  company          Company?      @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  ownerId          String?
+  owner            User?         @relation("ContactOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  firstName        String
+  lastName         String?
+  fullNameNormalized String
+  title            String?
+  email            String?       @unique // lowercased
+  emailSource      String? // import:<batchId> | manual | url
+  emailVerifiedAt  DateTime?
+  linkedinUrl      String?
+  country          String? // ISO-3166 alpha-2; drives compliance rules
+  isExistingCustomer Boolean     @default(false) // POPIA s69(3) basis
+  stage            PipelineStage @default(NEW)
+  notes            String?
+  sourceType       String        @default("manual")
+  sourceRef        String?
+  isSimulated      Boolean       @default(false) // seeded dummy lead
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  phoneNumbers   PhoneNumber[]
+  permissions    MarketingPermission[]
+  drafts         MessageDraft[]
+  smsEvents      SmsEvent[]
+  calls          Call[]
+  emailMessages  EmailMessage[]
+  campaignMembers CampaignMember[]
+  linkedinDrafts LinkedinDraft[]
+  meetings       Meeting[]
+  leadScores     LeadScore[]
+
+  @@index([companyId])
+  @@index([fullNameNormalized])
+  @@map("contacts")
+}
+
+enum PhoneType {
+  MOBILE
+  FIXED_LINE
+  UNKNOWN
+}
+
+model PhoneNumber {
+  id          String    @id @default(cuid())
+  contactId   String
+  contact     Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  e164        String // +27821234567
+  rawInput    String
+  country     String?
+  type        PhoneType @default(UNKNOWN)
+  isPrimary   Boolean   @default(false)
+  source      String // import:<batchId> | manual | url
+  sourceUrl   String?
+  verifiedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([contactId, e164])
+  @@index([e164])
+  @@map("phone_numbers")
+}
+
+// ───────────────────────── Import & dedupe ─────────────────────────
+
+enum ImportStatus {
+  PREVIEW
+  COMMITTING
+  COMMITTED
+  FAILED
+  CANCELLED
+}
+
+enum ImportRowAction {
+  CREATE
+  MERGE
+  SKIP_DUPLICATE
+  INVALID
+}
+
+model ImportBatch {
+  id          String       @id @default(cuid())
+  fileName    String
+  fileHash    String
+  status      ImportStatus @default(PREVIEW)
+  totalRows   Int          @default(0)
+  createdRows Int          @default(0)
+  mergedRows  Int          @default(0)
+  skippedRows Int          @default(0)
+  invalidRows Int          @default(0)
+  createdById String?
+  error       String?
+  createdAt   DateTime     @default(now())
+  committedAt DateTime?
+
+  rows ImportRow[]
+
+  @@map("import_batches")
+}
+
+model ImportRow {
+  id            String          @id @default(cuid())
+  batchId       String
+  batch         ImportBatch     @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  rowNumber     Int
+  raw           Json
+  normalized    Json?
+  action        ImportRowAction
+  errors        Json? // string[]
+  matchContactId String?
+  matchCompanyId String?
+  matchReason   String?
+
+  @@index([batchId])
+  @@map("import_rows")
+}
+
+// ───────────────────── Research, enrichment, scoring ─────────────────────
+
+model ResearchFact {
+  id         String   @id @default(cuid())
+  companyId  String
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  field      String // e.g. employee_count, tech_stack
+  value      String
+  sourceUrl  String // required: no unsourced facts
+  confidence Float // 0..1
+  verifiedAt DateTime
+  createdAt  DateTime @default(now())
+
+  @@index([companyId])
+  @@map("research_facts")
+}
+
+model LeadScore {
+  id         String   @id @default(cuid())
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  companyId  String?
+  company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contactId  String?
+  contact    Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  score      Int // 0..100
+  rationale  String
+  model      String // e.g. ollama:llama3.1:8b or rules:v1
+  createdAt  DateTime @default(now())
+
+  @@index([campaignId])
+  @@map("lead_scores")
+}
+
+// ───────────────────── Compliance: consent & suppression ─────────────────────
+
+enum Channel {
+  EMAIL
+  SMS
+  VOICE_MANUAL
+  VOICE_AUTOMATED
+  LINKEDIN
+}
+
+enum PermissionStatus {
+  GRANTED
+  WITHDRAWN
+  REFUSED
+  CONSENT_REQUESTED // POPIA s69(2)(b): one approach to request consent
+}
+
+enum LawfulBasis {
+  CONSENT
+  EXISTING_CUSTOMER // POPIA s69(3)
+  LEGITIMATE_INTEREST // non-electronic channels only, where rules allow
+}
+
+model MarketingPermission {
+  id          String           @id @default(cuid())
+  contactId   String
+  contact     Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  channel     Channel
+  status      PermissionStatus
+  basis       LawfulBasis?
+  evidence    String // how consent was captured (form URL, signed doc ref, call note)
+  capturedAt  DateTime
+  recordedById String?
+  createdAt   DateTime         @default(now())
+
+  @@index([contactId, channel])
+  @@map("marketing_permissions")
+}
+
+model Suppression {
+  id        String   @id @default(cuid())
+  // One of the identifiers below; stored normalised.
+  email     String?
+  e164      String?
+  domain    String?
+  channel   Channel? // null = all channels
+  reason    String // opt_out | bounce | complaint | manual | registry
+  source    String
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([e164])
+  @@index([domain])
+  @@map("suppressions")
+}
+
+model SystemSetting {
+  key       String   @id // e.g. outreach.emergency_stop
+  value     Json
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@map("system_settings")
+}
+
+// ───────────────────── Providers (SMS / voice / email) ─────────────────────
+
+enum ProviderKind {
+  SMS
+  VOICE
+  EMAIL
+  CALENDAR
+}
+
+enum ProviderMode {
+  MANUAL // human performs the action on their own device
+  SIMULATED // fake provider, no real traffic
+  AUTOMATED // system sends/calls; requires authorisation
+}
+
+model ProviderConfig {
+  id                 String       @id @default(cuid())
+  key                String       @unique // iphone_manual_sms, telkom_prepaid_iphone, business_sms_api, asterisk_sip_ai ...
+  kind               ProviderKind
+  adapter            String // adapter class name
+  displayName        String
+  mode               ProviderMode
+  enabled            Boolean      @default(false)
+  settings           Json         @default("{}") // non-secret settings
+  encryptedSecrets   String? // AES-256-GCM blob; never returned to the client
+  carrierAuthorized  Boolean      @default(false)
+  carrierAuthRef     String? // reference to written authorisation
+  carrierAuthAt      DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  airtime AirtimeEntry[]
+
+  @@map("provider_configs")
+}
+
+model AirtimeEntry {
+  id          String         @id @default(cuid())
+  providerId  String
+  provider    ProviderConfig @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  kind        String // topup | sms | call | data | adjustment
+  amountCents Int // positive = top-up, negative = spend
+  currency    String         @default("ZAR")
+  note        String?
+  relatedType String? // call | message_draft
+  relatedId   String?
+  recordedById String?
+  createdAt   DateTime       @default(now())
+
+  @@index([providerId, createdAt])
+  @@map("airtime_entries")
+}
+
+// ───────────────────── Campaigns ─────────────────────
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  STOPPED
+  COMPLETED
+}
+
+model Campaign {
+  id                 String         @id @default(cuid())
+  name               String
+  status             CampaignStatus @default(DRAFT)
+  icpDescription     String?
+  emailInstructions  String?
+  smsInstructions    String?
+  linkedinInstructions String?
+  callInstructions   String?
+  requireApproval    Boolean        @default(true)
+  emergencyStopped   Boolean        @default(false)
+  startAt            DateTime?
+  endAt              DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  members    CampaignMember[]
+  drafts     MessageDraft[]
+  calls      Call[]
+  leadScores LeadScore[]
+
+  @@map("campaigns")
+}
+
+model CampaignMember {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId  String
+  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  addedAt    DateTime @default(now())
+
+  @@unique([campaignId, contactId])
+  @@map("campaign_members")
+}
+
+// ───────────────────── Messaging (SMS / email drafts & events) ─────────────────────
+
+enum DraftStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  HANDED_OFF // opened in native app (manual) or submitted to provider (automated)
+  SENT_CONFIRMED // user attests it was sent (manual) / provider accepted (automated)
+  SEND_FAILED
+  CANCELLED
+}
+
+// Delivery evidence is tracked separately from the workflow status.
+enum DeliveryState {
+  NOT_ATTEMPTED
+  ATTEMPTED
+  ACCEPTED
+  DELIVERED
+  FAILED
+  UNKNOWN
+}
+
+model MessageDraft {
+  id            String        @id @default(cuid())
+  contactId     String
+  contact       Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  campaignId    String?
+  campaign      Campaign?     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  channel       Channel
+  providerKey   String
+  toAddress     String // e164 or email
+  subject       String?
+  body          String
+  generatedBy   String // ollama:<model> | template:v1 | human
+  purpose       String        @default("marketing") // marketing | consent_request | reply | transactional
+  status        DraftStatus   @default(PENDING_APPROVAL)
+  deliveryState DeliveryState @default(NOT_ATTEMPTED)
+  approvedById  String?
+  approvedAt    DateTime?
+  eligibility   Json? // snapshot of the eligibility decision at approval time
+  idempotencyKey String       @unique
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  smsEvents SmsEvent[]
+
+  @@index([contactId])
+  @@index([status])
+  @@map("message_drafts")
+}
+
+enum SmsEventType {
+  DRAFT_CREATED
+  APPROVED
+  REJECTED
+  OPENED_IN_NATIVE_APP
+  COPIED_TO_CLIPBOARD
+  USER_CONFIRMED_SENT
+  USER_REPORTED_FAILED
+  PROVIDER_ACCEPTED
+  PROVIDER_DELIVERY_REPORT
+  PROVIDER_FAILED
+  INBOUND_REPLY_MANUAL
+  INBOUND_REPLY_PROVIDER
+  OPT_OUT_RECORDED
+}
+
+model SmsEvent {
+  id         String       @id @default(cuid())
+  contactId  String
+  contact    Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  draftId    String?
+  draft      MessageDraft? @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  type       SmsEventType
+  direction  String // outbound | inbound | internal
+  body       String?
+  evidence   String // user_attestation | provider_receipt | system
+  providerKey String
+  occurredAt DateTime     @default(now())
+  recordedById String?
+
+  @@index([contactId, occurredAt])
+  @@map("sms_events")
+}
+
+model EmailAccount {
+  id               String   @id @default(cuid())
+  label            String
+  fromAddress      String   @unique
+  smtpHost         String
+  smtpPort         Int
+  imapHost         String
+  imapPort         Int
+  encryptedSecrets String // username/password (Hostinger mailbox)
+  enabled          Boolean  @default(false)
+  dailyLimit       Int      @default(50)
+  createdAt        DateTime @default(now())
+
+  messages EmailMessage[]
+
+  @@map("email_accounts")
+}
+
+model EmailMessage {
+  id            String        @id @default(cuid())
+  accountId     String
+  account       EmailAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contactId     String?
+  contact       Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  direction     String // outbound | inbound
+  messageId     String        @unique // RFC 5322 Message-ID
+  inReplyTo     String?
+  subject       String
+  bodyText      String
+  deliveryState DeliveryState @default(NOT_ATTEMPTED) // never DELIVERED from SMTP 250 alone
+  classification String? // interested | not_interested | ooo | bounce | unsubscribe | other
+  occurredAt    DateTime
+  createdAt     DateTime      @default(now())
+
+  @@map("email_messages")
+}
+
+// ───────────────────── Voice ─────────────────────
+
+enum CallStatus {
+  QUEUED
+  DIALING // tel: link opened (manual) or provider originating (automated)
+  IN_PROGRESS
+  COMPLETED
+  NO_ANSWER
+  BUSY
+  FAILED
+  CANCELLED
+}
+
+enum CallOutcome {
+  CONNECTED_INTERESTED
+  CONNECTED_NOT_INTERESTED
+  CONNECTED_CALLBACK
+  MEETING_BOOKED
+  VOICEMAIL
+  NO_ANSWER
+  BUSY
+  WRONG_NUMBER
+  OPT_OUT_REQUESTED
+  OTHER
+}
+
+model Call {
+  id            String       @id @default(cuid())
+  contactId     String?
+  contact       Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  campaignId    String?
+  campaign      Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  providerKey   String // iphone_manual_call | local_ai_sandbox | asterisk_sip_ai
+  mode          ProviderMode
+  toE164        String?
+  status        CallStatus   @default(QUEUED)
+  outcome       CallOutcome?
+  notes         String?
+  guidance      Json? // AI talking points shown to the caller
+  durationSec   Int? // user-entered for manual calls
+  costCents     Int?
+  voiceAgentId  String?
+  voiceAgent    VoiceAgentConfig? @relation(fields: [voiceAgentId], references: [id], onDelete: SetNull)
+  idempotencyKey String      @unique
+  startedAt     DateTime?
+  endedAt       DateTime?
+  createdById   String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  events      CallEvent[]
+  transcripts CallTranscript[]
+
+  @@index([status])
+  @@map("calls")
+}
+
+model CallEvent {
+  id         String   @id @default(cuid())
+  callId     String
+  call       Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+  type       String // queued | dial_link_opened | outcome_recorded | barge_in | silence_timeout | human_takeover | emergency_hangup ...
+  data       Json?
+  evidence   String // user_attestation | sandbox | provider
+  occurredAt DateTime @default(now())
+
+  @@index([callId, occurredAt])
+  @@map("call_events")
+}
+
+model CallTranscript {
+  id         String   @id @default(cuid())
+  callId     String
+  call       Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+  seq        Int
+  speaker    String // agent | human | system
+  text       String
+  interrupted Boolean @default(false)
+  startedMs  Int?
+  endedMs    Int?
+  createdAt  DateTime @default(now())
+
+  @@unique([callId, seq])
+  @@map("call_transcripts")
+}
+
+model VoiceAgentConfig {
+  id               String   @id @default(cuid())
+  name             String
+  persona          String
+  instructions     String
+  disclosureText   String // must state the caller is an AI; validated
+  llmModel         String   @default("llama3.1:8b")
+  sttModel         String   @default("small")
+  ttsVoiceRef      String? // path/id of the reference sample for Chatterbox
+  voiceOwnerConsent Boolean @default(false) // attestation that the voice belongs to/was licensed by the user
+  silenceTimeoutMs Int      @default(6000)
+  maxSilenceReprompts Int   @default(2)
+  maxTurns         Int      @default(30)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  calls Call[]
+
+  @@map("voice_agent_configs")
+}
+
+// ───────────────────── LinkedIn, calendar ─────────────────────
+
+model LinkedinDraft {
+  id           String   @id @default(cuid())
+  contactId    String
+  contact      Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  kind         String // connection_note | message | comment
+  body         String
+  status       DraftStatus @default(PENDING_APPROVAL)
+  // Sent manually by the user in LinkedIn; never automated.
+  userMarkedSentAt DateTime?
+  createdAt    DateTime @default(now())
+
+  @@map("linkedin_drafts")
+}
+
+model Meeting {
+  id              String   @id @default(cuid())
+  contactId       String
+  contact         Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  googleEventId   String?  @unique
+  title           String
+  startsAt        DateTime
+  endsAt          DateTime
+  status          String   @default("scheduled")
+  createdAt       DateTime @default(now())
+
+  @@map("meetings")
+}
+
+// ───────────────────── Jobs & cost ─────────────────────
+
+model JobRecord {
+  id             String   @id @default(cuid())
+  idempotencyKey String   @unique
+  queue          String
+  payload        Json
+  status         String   @default("queued") // queued | running | succeeded | failed
+  attempts       Int      @default(0)
+  lastError      String?
+  result         Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("job_records")
+}
+
+model CostEntry {
+  id          String   @id @default(cuid())
+  category    String // airtime | ai_compute | email | other
+  amountCents Int
+  currency    String   @default("ZAR")
+  relatedType String?
+  relatedId   String?
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@map("cost_entries")
+}

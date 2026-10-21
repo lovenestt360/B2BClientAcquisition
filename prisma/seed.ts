@@ -1,0 +1,93 @@
+/**
+ * Seed: admin + role users and simulated dummy leads.
+ * Dummy leads use example.* domains and are flagged isSimulated=true; the UI disables
+ * real sms:/tel: actions for them so a fictional number can never be texted or dialled.
+ */
+import { PrismaClient, type PipelineStage } from "@prisma/client";
+import { hashPassword } from "../src/server/auth/password";
+import { normalizeCompanyName, normalizePersonName } from "../src/server/normalize";
+import { seedProviders } from "./seed-providers";
+
+const prisma = new PrismaClient();
+
+const COMPANIES = [
+  { name: "Karoo Logistics (Pty) Ltd", domain: "karoo-logistics.example", industry: "Logistics", city: "Johannesburg" },
+  { name: "Fynbos Software", domain: "fynbos-software.example", industry: "Software", city: "Cape Town" },
+  { name: "Umhlanga Medical Supplies", domain: "umhlanga-medical.example", industry: "Healthcare", city: "Durban" },
+  { name: "Highveld Engineering CC", domain: "highveld-eng.example", industry: "Engineering", city: "Pretoria" },
+  { name: "Baobab Financial Advisory", domain: "baobab-fin.example", industry: "Financial services", city: "Sandton" },
+];
+
+const PEOPLE: [string, string, string, number, PipelineStage][] = [
+  ["Thandi", "Mokoena", "Operations Director", 0, "NEW"],
+  ["Pieter", "van der Merwe", "Fleet Manager", 0, "QUALIFIED"],
+  ["Aisha", "Patel", "CTO", 1, "CONTACTED"],
+  ["Sipho", "Dlamini", "Head of Sales", 1, "NEW"],
+  ["Naledi", "Khumalo", "Procurement Lead", 2, "ENGAGED"],
+  ["Johan", "Botha", "Managing Director", 3, "NEW"],
+  ["Lerato", "Nkosi", "Finance Manager", 4, "MEETING_BOOKED"],
+  ["Zanele", "Mthembu", "COO", 4, "RESEARCHING"],
+];
+
+async function main() {
+  const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe!2026";
+  const users = [
+    { email: adminEmail, name: "Admin", role: "ADMIN" as const, password: adminPassword },
+    { email: "manager@example.com", name: "Morgan Manager", role: "MANAGER" as const, password: adminPassword },
+    { email: "operator@example.com", name: "Olu Operator", role: "OPERATOR" as const, password: adminPassword },
+    { email: "viewer@example.com", name: "Val Viewer", role: "VIEWER" as const, password: adminPassword },
+  ];
+  for (const u of users) {
+    await prisma.user.upsert({
+      where: { email: u.email },
+      update: {},
+      create: { email: u.email, name: u.name, role: u.role, passwordHash: await hashPassword(u.password) },
+    });
+  }
+
+  const companyIds: string[] = [];
+  for (const c of COMPANIES) {
+    const row = await prisma.company.upsert({
+      where: { domain: c.domain },
+      update: {},
+      create: { ...c, normalizedName: normalizeCompanyName(c.name), website: `https://${c.domain}`, country: "ZA", sourceType: "seed" },
+    });
+    companyIds.push(row.id);
+  }
+
+  for (const [i, [first, last, title, ci, stage]] of PEOPLE.entries()) {
+    const email = `${first}.${last}`.toLowerCase().replace(/\s+/g, "") + `@${COMPANIES[ci].domain}`;
+    // Valid-format SA mobile numbers in the 082 000 0xxx block; flagged simulated, never dialled.
+    const e164 = `+2782000${String(1000 + i).padStart(4, "0")}`;
+    await prisma.contact.upsert({
+      where: { email },
+      update: {},
+      create: {
+        firstName: first,
+        lastName: last,
+        fullNameNormalized: normalizePersonName(first, last),
+        title,
+        email,
+        emailSource: "seed",
+        country: "ZA",
+        stage,
+        companyId: companyIds[ci],
+        isSimulated: true,
+        sourceType: "seed",
+        phoneNumbers: { create: { e164, rawInput: e164, country: "ZA", type: "MOBILE", isPrimary: true, source: "seed" } },
+      },
+    });
+  }
+
+  await seedProviders(prisma);
+  console.log(`Seeded ${users.length} users, ${COMPANIES.length} companies, ${PEOPLE.length} simulated contacts.`);
+  console.log(`Sign in as ${adminEmail} (password from SEED_ADMIN_PASSWORD).`);
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(() => prisma.$disconnect());
