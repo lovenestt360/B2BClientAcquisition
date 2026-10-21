@@ -7,5 +7,5 @@ export async function signIn(page: Page, email = "admin@example.com") {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL("/");
+  await page.waitForURL(/\/(today)?$/); // phones land on /today, laptops on the dashboard
 }

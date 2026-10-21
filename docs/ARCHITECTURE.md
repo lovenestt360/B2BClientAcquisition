@@ -45,6 +45,24 @@
 | `src/server/ai` | LLM client (Ollama or deterministic mock), SMS generation with invented-detail guardrails |
 | `src/server/jobs` | pg-boss wrapper with `job_records` idempotency keys and retry policies; inline mode for dev/tests |
 
+## Phone and laptop experiences
+
+One codebase, two layouts (`src/components/AppShell.tsx`):
+
+| | Phone (< 1024 px, installable PWA) | Laptop (≥ 1024 px) |
+|---|---|---|
+| Navigation | Bottom tabs (Today, SMS, Calls, Contacts) + "More" sheet; badges for work waiting | Grouped sidebar (Outreach, CRM, Insights, Settings) with the same badges |
+| Home | `/today`: confirm sends → send approved SMS → record call outcomes → make calls | `/`: dashboard and pipeline |
+| Typical jobs | Tap-to-send (`sms:`), tap-to-dial (`tel:`), confirm outcomes, paste replies | Import, approve drafts, compliance, providers, reports, voice sandbox |
+
+PWA: `app/manifest.ts` (start `/today`, standalone), generated icons (`app/icon.tsx`,
+`app/apple-icon.tsx`), and `public/sw.js`, which caches only hashed static assets and serves
+`offline.html` when the laptop is unreachable. Pages and API data are never cached. Service workers
+need HTTPS (or localhost); over plain Wi-Fi http the app still installs via Add to Home Screen.
+
+`npm run laptop` (`scripts/laptop.ts`) serves on `0.0.0.0` and prints the Wi-Fi URL as a QR code;
+`/connect` shows the same in the app (`src/server/lan.ts`).
+
 ## Provider abstraction
 
 ```ts

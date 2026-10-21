@@ -1,5 +1,8 @@
 # Deployment
 
+**Laptop (simplest):** `npm run laptop`. See the README. The phone connects over Wi-Fi while the
+laptop is awake. The rest of this page covers an always-on server.
+
 Target: one Linux host (VPS or office machine) with Docker. With voice, a machine with an NVIDIA
 GPU is recommended for Chatterbox.
 
@@ -46,8 +49,11 @@ crm.yourdomain.co.za {
 }
 ```
 
-The iPhone uses the site in Safari. Add it to the Home Screen for an app-like experience.
-`sms:` and `tel:` links open Messages and Phone directly.
+The iPhone uses the site in Safari. Add it to the Home Screen for an app-like experience;
+`sms:` and `tel:` links open Messages and Phone directly. With
+HTTPS the offline page and the phone microphone (voice sandbox) also work. To reach a compose
+deployment directly from a phone on the LAN without a proxy, set `APP_BIND=0.0.0.0` and
+`COOKIE_SECURE=false`.
 
 ## 4. Going live with real contacts (manual iPhone channel)
 

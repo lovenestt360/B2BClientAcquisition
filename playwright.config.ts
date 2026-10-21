@@ -20,7 +20,7 @@ export default defineConfig({
   projects: [
     { name: "desktop", use: { ...devices["Desktop Chrome"] }, grepInvert: /@mobile/ },
     // iPhone viewport (rendered in Chromium) to check the responsive dashboard.
-    { name: "iphone", use: { ...devices["iPhone 13"], browserName: "chromium" }, grep: /@mobile/ },
+    { name: "iphone", use: { ...devices["iPhone 13"], browserName: "chromium" }, grep: /@mobile/, dependencies: ["desktop"] },
   ],
   webServer: {
     command: `npx next build && npx next start -p ${PORT}`,

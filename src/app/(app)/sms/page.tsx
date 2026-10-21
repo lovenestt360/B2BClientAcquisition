@@ -7,7 +7,7 @@ import { getHalt, getSenderProfile } from "@/server/compliance/controls";
 import { smsSegments } from "@/server/ai/drafts";
 import { ActionForm } from "@/components/ActionForm";
 import { DeliveryBadge, Empty, ModeBadge, PageHeader, StatusBadge, fmtDate } from "@/components/ui";
-import { SmsHandoff } from "@/components/outreach/SmsHandoff";
+import { SmsReadyCard } from "@/components/outreach/SmsReadyCard";
 import { approveDraftAction, generateDraftsAction, rejectDraftAction } from "@/app/actions/outreach";
 
 export default async function SmsPage() {
@@ -124,16 +124,7 @@ export default async function SmsPage() {
 
       <section aria-labelledby="send" className="space-y-2">
         <h2 id="send" className="font-semibold">3. Send from your iPhone ({ready.length})</h2>
-        {ready.length === 0 ? <Empty>Nothing approved yet.</Empty> : ready.map((d) => (
-          <div key={d.id} className="card space-y-2" data-testid="ready-draft">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-              <Link href={`/sms/${d.contact.id}`} className="font-medium text-brand-700">{d.contact.firstName} {d.contact.lastName}</Link>
-              <span className="flex gap-1"><ModeBadge mode={mode(d.providerKey)} /><StatusBadge status={d.status} /></span>
-            </div>
-            <p className="whitespace-pre-wrap rounded bg-slate-50 p-2 font-mono text-sm">{d.body}</p>
-            <SmsHandoff draftId={d.id} body={d.body} status={d.status} simulated={d.contact.isSimulated} />
-          </div>
-        ))}
+        {ready.length === 0 ? <Empty>Nothing approved yet.</Empty> : ready.map((d) => <SmsReadyCard key={d.id} draft={d} mode={mode(d.providerKey)} />)}
       </section>
 
       <section className="card overflow-x-auto p-0" aria-labelledby="hist">

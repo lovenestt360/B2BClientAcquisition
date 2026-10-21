@@ -111,7 +111,7 @@ test.describe.serial("iPhone-assisted SMS & calling, voice sandbox", () => {
 
 test("@mobile SMS and call screens fit an iPhone", async ({ page }) => {
   await signIn(page);
-  for (const path of ["/sms", "/calls", "/voice", "/providers"]) {
+  for (const path of ["/today", "/sms", "/calls", "/voice", "/providers", "/connect"]) {
     await page.goto(path);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     expect(overflow, `${path} overflows horizontally`).toBe(false);

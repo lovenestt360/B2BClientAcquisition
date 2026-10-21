@@ -29,6 +29,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-acquisition}
     volumes: [pgdata:/var/lib/postgresql/data]
+    ports: ["127.0.0.1:${DB_PORT:-5432}:5432"] # laptop mode: `npm run laptop` connects here
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app}"]
       interval: 5s
@@ -40,7 +41,8 @@ services:
     restart: unless-stopped
     environment: *app-env
     depends_on: { db: { condition: service_healthy } }
-    ports: ["127.0.0.1:3000:3000"] # put a TLS reverse proxy in front (docs/DEPLOYMENT.md)
+    # 127.0.0.1 = behind a TLS reverse proxy (docs/DEPLOYMENT.md). APP_BIND=0.0.0.0 to reach it from a phone on Wi-Fi.
+    ports: ["${APP_BIND:-127.0.0.1}:3000:3000"]
 
   worker:
     image: acquisition-app:latest

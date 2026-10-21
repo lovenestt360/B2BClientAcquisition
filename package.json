@@ -15,7 +15,9 @@
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "laptop": "tsx scripts/laptop.ts",
+    "laptop:dev": "tsx scripts/laptop.ts --dev"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -28,6 +30,7 @@
     "next": "^15.5.28",
     "papaparse": "^5.7.0",
     "pg-boss": "^10.4.2",
+    "qrcode": "^1.5.4",
     "react": "^19.1.10",
     "react-dom": "^19.1.10",
     "server-only": "^0.0.1",
@@ -38,6 +41,7 @@
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^22.20.5",
     "@types/papaparse": "^5.5.2",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "dotenv": "^18.0.8",

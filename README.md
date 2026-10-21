@@ -23,9 +23,24 @@ faster-whisper, Chatterbox TTS, Docker Compose. No SaaS subscriptions.
 | AI voice sandbox | Disclosure, turn-taking, barge-in, silence handling, opt-out, human takeover, emergency hang-up, transcripts |
 | Providers | Capabilities and limitations per channel, Telkom prepaid line, airtime ledger; future SMS API / Android gateway / Asterisk SIP behind the gate |
 | Reports | SMS sent and replies, call outcomes, connect rate, meetings, opt-outs, airtime |
+| Phone app | Installable PWA (Add to Home Screen), Today work queue, bottom tabs with badges, safe-area aware, offline page |
+| Laptop app | Grouped sidebar with live badges, Connect-phone QR page, one-command `npm run laptop` |
 
 Roadmap modules (email, enrichment, scoring, campaigns UI, LinkedIn drafts, Google Calendar):
 schema is in place; see [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
+
+## Run it: laptop + iPhone
+
+```bash
+npm ci
+npm run laptop        # first run creates .env, starts Postgres (Docker), migrates, seeds, builds, serves
+```
+
+The laptop opens `http://localhost:3000` (sidebar layout for admin work). The terminal prints a
+**QR code**: scan it with the iPhone camera on the same Wi-Fi, sign in, then **Share → Add to
+Home Screen**. The phone app opens on **Today**, your work queue of messages to send, calls to
+make and outcomes to record, with bottom tabs for Today, SMS, Calls and Contacts. The QR code is
+also on **Settings → Connect phone**. Use `npm run laptop:dev` for hot reload while developing.
 
 ## Quick start (development)
 

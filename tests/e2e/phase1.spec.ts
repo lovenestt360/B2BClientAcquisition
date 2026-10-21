@@ -56,8 +56,7 @@ test("RBAC: viewer cannot see admin pages or write", async ({ page }) => {
 
 test("@mobile dashboard is usable at iPhone width", async ({ page }) => {
   await signIn(page);
-  await page.getByRole("button", { name: "Menu" }).click();
-  await page.getByRole("link", { name: "Contacts" }).click();
+  await page.getByRole("navigation", { name: "Tabs" }).getByRole("link", { name: "Contacts" }).click();
   await expect(page.getByRole("heading", { name: "Contacts" })).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
   expect(overflow).toBe(false);

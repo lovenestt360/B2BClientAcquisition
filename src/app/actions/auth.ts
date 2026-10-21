@@ -20,7 +20,8 @@ export async function loginAction(_prev: { error?: string } | undefined, form: F
     path: "/",
     maxAge: SESSION_TTL_MS / 1000,
   });
-  redirect("/");
+  // Phones open on the work queue; laptops on the dashboard.
+  redirect(/iPhone|iPod|Android.+Mobile/.test(h.get("user-agent") ?? "") ? "/today" : "/");
 }
 
 export async function logoutAction() {

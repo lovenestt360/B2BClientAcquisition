@@ -26,7 +26,8 @@ for dummy leads go there and never to a fictional number.
 
 | # | Step | Expected |
 |---|---|---|
-| 1 | Open the site in iPhone Safari and sign in | Dashboard fits the screen; menu button shows navigation |
+| 0 | On the laptop run `npm run laptop`; scan the terminal QR with the iPhone camera | Safari opens the login page |
+| 1 | Sign in on the iPhone, then Share → Add to Home Screen; open it from the icon | Opens full-screen on **Today**; bottom tabs Today / SMS / Calls / Contacts / More |
 | 2 | SMS → select *Aisha Patel (dummy)* → Generate | 1 draft created; ineligible leads skipped with the reason |
 | 3 | Approve (edit the text if you like) | Draft moves to "Send from your iPhone" |
 | 4 | Tap **Copy message**, then paste into Notes | Exact text pasted |
