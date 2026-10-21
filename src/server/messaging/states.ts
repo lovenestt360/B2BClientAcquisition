@@ -22,11 +22,24 @@ export const DELIVERY_TRANSITIONS: Record<DeliveryState, DeliveryState[]> = {
   ATTEMPTED: ["ACCEPTED", "FAILED", "UNKNOWN", "DELIVERED"],
   ACCEPTED: ["DELIVERED", "FAILED", "UNKNOWN"],
   UNKNOWN: ["DELIVERED", "FAILED"],
+  // A late bounce can follow a reply-less ACCEPTED; after DELIVERED nothing changes.
   DELIVERED: [],
   FAILED: [],
 };
 
-export type Evidence = "user_attestation" | "provider_receipt" | "simulated_receipt" | "system";
+export type Evidence =
+  | "user_attestation"
+  | "provider_receipt"
+  | "simulated_receipt"
+  | "system"
+  | "smtp_250" // SMTP server accepted: ACCEPTED at most
+  | "smtp_reject"
+  | "dsn_bounce"
+  | "recipient_reply" // the recipient answered this message: it reached them
+  | "recipient_auto_reply"; // their mailbox auto-responded to this message
+
+/** Evidence strong enough to say a message reached the recipient. */
+export const DELIVERY_EVIDENCE: Evidence[] = ["provider_receipt", "simulated_receipt", "recipient_reply", "recipient_auto_reply"];
 
 export function assertDraftTransition(from: DraftStatus, to: DraftStatus) {
   if (from === to) return;
@@ -36,7 +49,7 @@ export function assertDraftTransition(from: DraftStatus, to: DraftStatus) {
 export function assertDeliveryTransition(from: DeliveryState, to: DeliveryState, evidence: Evidence) {
   if (from === to) return;
   if (!DELIVERY_TRANSITIONS[from].includes(to)) throw new AppError(`Cannot move delivery state from ${from} to ${to}`, "invalid_transition", 409);
-  if (to === "DELIVERED" && evidence !== "provider_receipt" && evidence !== "simulated_receipt") {
-    throw new AppError("DELIVERED requires an independent delivery receipt", "no_evidence", 422);
+  if (to === "DELIVERED" && !DELIVERY_EVIDENCE.includes(evidence)) {
+    throw new AppError("DELIVERED requires independent evidence (receipt or recipient reply)", "no_evidence", 422);
   }
 }

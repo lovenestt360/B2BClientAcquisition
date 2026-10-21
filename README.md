@@ -19,6 +19,8 @@ faster-whisper, Chatterbox TTS, Docker Compose. No SaaS subscriptions.
 | Import | CSV/XLSX → column detection → validation → dedupe preview → idempotent commit (job) |
 | Compliance | POPIA s69 / CPA Reg 4 eligibility, consent records, suppression, STOP handling, emergency stop, sender identity |
 | SMS (iPhone) | AI draft → manager approval → Copy / Open in Messages (`sms:`) → you confirm; delivery stays **unknown**; manual reply entry; conversation view |
+| Email (Hostinger) | Your own mailbox over SMTP/IMAP; AI draft → approval → click Send; accepted ≠ delivered; IMAP sync with bounce, auto-reply and unsubscribe handling |
+| Inbox | Email + SMS replies in one place, classified (interested / question / not interested / unsubscribe…), Done/Reopen triage |
 | Calls (iPhone) | Call queue, `tel:` dial button, lead profile + AI talking points, manual outcomes, cost estimates |
 | AI voice sandbox | Disclosure, turn-taking, barge-in, silence handling, opt-out, human takeover, emergency hang-up, transcripts |
 | Providers | Capabilities and limitations per channel, Telkom prepaid line, airtime ledger; future SMS API / Android gateway / Asterisk SIP behind the gate |
@@ -26,7 +28,7 @@ faster-whisper, Chatterbox TTS, Docker Compose. No SaaS subscriptions.
 | Phone app | Installable PWA (Add to Home Screen), Today work queue, bottom tabs with badges, safe-area aware, offline page |
 | Laptop app | Grouped sidebar with live badges, Connect-phone QR page, one-command `npm run laptop` |
 
-Roadmap modules (email, enrichment, scoring, campaigns UI, LinkedIn drafts, Google Calendar):
+Roadmap modules (enrichment, scoring, campaigns UI, LinkedIn drafts, Google Calendar):
 schema is in place; see [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
 
 ## Run it: laptop + iPhone
@@ -39,7 +41,7 @@ npm run laptop        # first run creates .env, starts Postgres (Docker), migrat
 The laptop opens `http://localhost:3000` (sidebar layout for admin work). The terminal prints a
 **QR code**: scan it with the iPhone camera on the same Wi-Fi, sign in, then **Share → Add to
 Home Screen**. The phone app opens on **Today**, your work queue of messages to send, calls to
-make and outcomes to record, with bottom tabs for Today, SMS, Calls and Contacts. The QR code is
+make and outcomes to record, with bottom tabs for Today, Inbox, SMS and Calls (everything else under More). The QR code is
 also on **Settings → Connect phone**. Use `npm run laptop:dev` for hot reload while developing.
 
 ## Quick start (development)
@@ -81,6 +83,7 @@ npm run typecheck
 - [Architecture, providers, state machines, jobs](docs/ARCHITECTURE.md)
 - [Requirements and status](docs/REQUIREMENTS.md)
 - [Compliance model (POPIA / CPA)](docs/COMPLIANCE.md)
+- [Email: Hostinger setup, delivery evidence, inbox sync](docs/EMAIL.md)
 - [Voice: engine, sandbox, future SIP](docs/VOICE.md)
 - [Testing, including the manual iPhone checklist](docs/TESTING.md)
 - [Deployment](docs/DEPLOYMENT.md)

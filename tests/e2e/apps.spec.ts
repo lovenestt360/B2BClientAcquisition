@@ -51,7 +51,7 @@ test("@mobile phone: lands on Today, drafts on SMS tab, sends from Today", async
   await card.getByRole("button", { name: "I sent it" }).click();
   await page.reload();
   await expect(page.getByTestId("ready-draft").filter({ hasText: "Lerato" })).toHaveCount(0);
-  await expect(page.getByTestId("today-stats")).toContainText(/SMS sent\s*[1-9]/i);
+  await expect(page.getByTestId("today-stats")).toContainText(/SMS \+ email sent\s*[1-9]/i);
 
   // The More sheet reaches everything else
   await page.getByRole("button", { name: "More" }).click();

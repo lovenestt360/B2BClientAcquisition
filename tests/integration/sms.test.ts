@@ -40,7 +40,7 @@ describe("iPhone manual SMS workflow", () => {
     const sent = await db.messageDraft.findUniqueOrThrow({ where: { id: draft.id } });
     expect(sent).toMatchObject({ status: "SENT_CONFIRMED", deliveryState: "UNKNOWN" });
     expect(await events(draft.id)).toEqual(["DRAFT_CREATED:system", "APPROVED:system", "OPENED_IN_NATIVE_APP:system", "USER_CONFIRMED_SENT:user_attestation"]);
-    expect(() => assertDeliveryTransition(sent.deliveryState, "DELIVERED", "user_attestation")).toThrow(/receipt/);
+    expect(() => assertDeliveryTransition(sent.deliveryState, "DELIVERED", "user_attestation")).toThrow(/independent evidence/);
 
     const airtime = await db.airtimeEntry.findMany();
     expect(airtime).toEqual([expect.objectContaining({ kind: "sms_estimate", amountCents: -50, estimated: true })]);

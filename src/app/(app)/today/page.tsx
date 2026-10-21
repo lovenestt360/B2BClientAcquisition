@@ -9,6 +9,7 @@ import { startOfLocalDay, todayActivity, workQueueCounts } from "@/server/today"
 import { Empty, Stat } from "@/components/ui";
 import { SmsReadyCard } from "@/components/outreach/SmsReadyCard";
 import { CallCard } from "@/components/outreach/CallCard";
+import { EmailReadyCard } from "@/components/outreach/EmailReadyCard";
 
 /**
  * Phone-first work queue: everything that needs a thumb on the iPhone, in order.
@@ -35,9 +36,15 @@ export default async function TodayPage() {
     orderBy: [{ status: "desc" }, { createdAt: "asc" }], // DIALING (awaiting outcome) before QUEUED
     take: 25,
   });
+  const emails = await prisma.messageDraft.findMany({
+    where: { channel: "EMAIL", status: "APPROVED" },
+    include: { contact: { select: { firstName: true, lastName: true } }, emailAccount: { select: { isSimulated: true } } },
+    orderBy: { approvedAt: "asc" },
+    take: 25,
+  });
   const windowNote = rulesFor("ZA").contactWindow!(localTime(t, process.env.APP_TIMEZONE ?? "Africa/Johannesburg"));
   const mode = (key: string) => providers.find((p) => p.key === key)?.mode ?? "MANUAL";
-  const empty = drafts.length === 0 && calls.length === 0;
+  const empty = drafts.length === 0 && calls.length === 0 && emails.length === 0;
 
   return (
     <div className="space-y-5">
@@ -59,11 +66,18 @@ export default async function TodayPage() {
       )}
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" data-testid="today-stats">
-        <Stat label="SMS sent" value={activity.smsConfirmed} />
+        <Stat label="SMS + email sent" value={activity.smsConfirmed + activity.emailsSent} />
         <Stat label="Replies" value={activity.replies} />
         <Stat label="Calls made" value={activity.callsDone} />
         <Stat label="Meetings" value={activity.meetings} />
       </div>
+
+      {counts.inboxOpen > 0 && (
+        <Link href="/inbox" className="card flex items-center justify-between text-sm" data-testid="today-inbox">
+          <span>📥 {counts.inboxOpen} {counts.inboxOpen === 1 ? "reply needs" : "replies need"} your attention</span>
+          <span className="text-brand-700">Open inbox →</span>
+        </Link>
+      )}
 
       {empty && (
         <Empty>
@@ -78,6 +92,13 @@ export default async function TodayPage() {
             {counts.awaitingConfirmation > 0 && <span className="ml-2 text-xs font-normal text-amber-700">{counts.awaitingConfirmation} waiting for your confirmation</span>}
           </h2>
           {drafts.map((d) => <SmsReadyCard key={d.id} draft={d} mode={mode(d.providerKey)} />)}
+        </section>
+      )}
+
+      {emails.length > 0 && (
+        <section className="space-y-2" aria-labelledby="t-email">
+          <h2 id="t-email" className="font-semibold">✉️ Emails to send ({emails.length})</h2>
+          {emails.map((d) => <EmailReadyCard key={d.id} draft={d} />)}
         </section>
       )}
 

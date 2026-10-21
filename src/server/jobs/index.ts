@@ -7,6 +7,8 @@ import { handlers, type QueueName } from "./handlers";
 export const QUEUE_POLICIES: Record<QueueName, { retryLimit: number; retryDelay: number; retryBackoff: boolean }> = {
   "import.commit": { retryLimit: 3, retryDelay: 10, retryBackoff: true },
   "sms.generate_drafts": { retryLimit: 2, retryDelay: 15, retryBackoff: true },
+  "email.send": { retryLimit: 3, retryDelay: 60, retryBackoff: true },
+  "email.sync_all": { retryLimit: 1, retryDelay: 60, retryBackoff: false },
 };
 
 let boss: PgBoss | null = null;
@@ -78,4 +80,12 @@ export async function runJob(db: Db, jobRecordId: string) {
     });
     throw e;
   }
+}
+
+/** Run a cron-triggered job in this process, recorded under a per-run idempotency key. */
+export async function runScheduled(db: Db, queue: QueueName, idempotencyKey: string) {
+  const rec =
+    (await db.jobRecord.findUnique({ where: { idempotencyKey } })) ??
+    (await db.jobRecord.create({ data: { idempotencyKey, queue, payload: {} } }));
+  return runJob(db, rec.id);
 }

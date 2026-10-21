@@ -84,6 +84,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           <h2 id="outreach" className="font-semibold">Outreach eligibility &amp; consent</h2>
           <div className="flex flex-wrap gap-2">
             <Link className="btn-secondary" href={`/sms/${c.id}`}>SMS conversation</Link>
+            {c.email && <Link className="btn-secondary" href={`/email/${c.id}`}>Email thread</Link>}
             {can(user.role, "outreach.draft") && c.phoneNumbers.length > 0 && (
               <ActionForm action={queueCallAction} submitLabel="Queue call" className="flex gap-2">
                 <input type="hidden" name="contactId" value={c.id} />

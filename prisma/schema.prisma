@@ -492,10 +492,14 @@ model MessageDraft {
   approvedAt    DateTime?
   eligibility   Json? // snapshot of the eligibility decision at approval time
   idempotencyKey String       @unique
+  emailAccountId String?
+  emailAccount   EmailAccount? @relation(fields: [emailAccountId], references: [id], onDelete: SetNull)
+  lastError      String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  smsEvents SmsEvent[]
+  smsEvents    SmsEvent[]
+  emailMessage EmailMessage?
 
   @@index([contactId])
   @@index([status])
@@ -531,6 +535,7 @@ model SmsEvent {
   providerKey String
   occurredAt DateTime     @default(now())
   recordedById String?
+  handledAt  DateTime? // inbox triage: inbound marked done
 
   @@index([contactId, occurredAt])
   @@map("sms_events")
@@ -539,37 +544,67 @@ model SmsEvent {
 model EmailAccount {
   id               String   @id @default(cuid())
   label            String
+  fromName         String // display name, e.g. "Thabo at Demo Co"
   fromAddress      String   @unique
+  username         String // usually the mailbox address
   smtpHost         String
   smtpPort         Int
+  smtpSecure       Boolean  @default(true) // implicit TLS (465); false = STARTTLS (587)
   imapHost         String
   imapPort         Int
-  encryptedSecrets String // username/password (Hostinger mailbox)
+  imapSecure       Boolean  @default(true)
+  encryptedSecrets String? // AES-256-GCM JSON {password}; null for the simulated mailbox
+  isSimulated      Boolean  @default(false) // fake mailbox: never opens a network connection
   enabled          Boolean  @default(false)
-  dailyLimit       Int      @default(50)
+  dailyLimit       Int      @default(30)
+  imapUidValidity  BigInt?
+  imapLastUid      Int      @default(0)
+  lastSyncAt       DateTime?
+  lastSyncError    String?
+  lastTestAt       DateTime?
+  lastTestResult   String?
   createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   messages EmailMessage[]
+  drafts   MessageDraft[]
 
   @@map("email_accounts")
 }
 
 model EmailMessage {
-  id            String        @id @default(cuid())
-  accountId     String
-  account       EmailAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  contactId     String?
-  contact       Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
-  direction     String // outbound | inbound
-  messageId     String        @unique // RFC 5322 Message-ID
-  inReplyTo     String?
-  subject       String
-  bodyText      String
-  deliveryState DeliveryState @default(NOT_ATTEMPTED) // never DELIVERED from SMTP 250 alone
-  classification String? // interested | not_interested | ooo | bounce | unsubscribe | other
-  occurredAt    DateTime
-  createdAt     DateTime      @default(now())
+  id             String        @id @default(cuid())
+  accountId      String
+  account        EmailAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contactId      String?
+  contact        Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  draftId        String?       @unique // outbound: the approved draft it was sent from
+  draft          MessageDraft? @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  parentId       String? // inbound: the outbound message it answers / bounces
+  parent         EmailMessage? @relation("EmailThread", fields: [parentId], references: [id], onDelete: SetNull)
+  children       EmailMessage[] @relation("EmailThread")
+  direction      String // outbound | inbound
+  messageId      String        @unique // RFC 5322 Message-ID (without <>)
+  inReplyTo      String?
+  references     String?
+  fromAddress    String
+  toAddress      String
+  subject        String
+  bodyText       String
+  // Never DELIVERED from SMTP 250 alone; only from a reply/auto-reply or provider receipt.
+  deliveryState  DeliveryState @default(NOT_ATTEMPTED)
+  deliveryEvidence String? // smtp_250 | smtp_reject | dsn_bounce | recipient_reply | recipient_auto_reply | simulated
+  smtpResponse   String?
+  bounceType     String? // hard | soft
+  bounceCode     String? // e.g. 5.1.1
+  classification String? // interested | not_interested | question | unsubscribe | out_of_office | bounce | other
+  classificationSource String? // rules | llm | mock
+  handledAt      DateTime? // inbox triage: inbound marked done
+  occurredAt     DateTime
+  createdAt      DateTime      @default(now())
 
+  @@index([contactId, occurredAt])
+  @@index([accountId, direction])
   @@map("email_messages")
 }
 

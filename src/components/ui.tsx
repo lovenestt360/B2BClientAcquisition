@@ -70,9 +70,42 @@ const DELIVERY: Record<string, [string, string]> = {
 };
 
 /** Delivery state with its evidence level spelled out. */
-export function DeliveryBadge({ state }: { state: string }) {
-  const [label, cls] = DELIVERY[state] ?? [state, ""];
-  return <span className={`badge ${cls}`} title="Delivered is only shown with an independent receipt">{label}</span>;
+const EVIDENCE: Record<string, string> = {
+  smtp_250: "mail server accepted it",
+  smtp_reject: "mail server refused it",
+  dsn_bounce: "bounce notice received",
+  recipient_reply: "recipient replied",
+  recipient_auto_reply: "recipient's auto-reply",
+  provider_receipt: "provider receipt",
+  simulated_receipt: "simulated receipt",
+  user_attestation: "you reported it",
+};
+
+export function DeliveryBadge({ state, channel, evidence }: { state: string; channel?: "email" | "sms"; evidence?: string | null }) {
+  let [label, cls] = DELIVERY[state] ?? [state, ""];
+  if (channel === "email" && state === "ACCEPTED") label = "accepted by mail server";
+  const why = evidence ? EVIDENCE[evidence] ?? evidence : null;
+  return (
+    <span className={`badge ${cls}`} title="Delivered is only shown with independent evidence (receipt or reply)">
+      {label}
+      {why && <span className="ml-1 font-normal opacity-75">· {why}</span>}
+    </span>
+  );
+}
+
+const LABEL_STYLE: Record<string, string> = {
+  interested: "bg-green-100 text-green-800",
+  question: "bg-blue-100 text-blue-800",
+  not_interested: "bg-slate-200 text-slate-700",
+  unsubscribe: "bg-red-100 text-red-800",
+  out_of_office: "bg-amber-100 text-amber-800",
+  bounce: "bg-red-100 text-red-800",
+  other: "bg-slate-100 text-slate-700",
+};
+
+export function ReplyLabel({ label }: { label: string | null }) {
+  if (!label) return null;
+  return <span className={`badge ${LABEL_STYLE[label] ?? "bg-slate-100"}`}>{label.replace(/_/g, " ")}</span>;
 }
 
 export function StatusBadge({ status }: { status: string }) {

@@ -49,7 +49,9 @@ describe("state machines", () => {
   });
   it("never allows DELIVERED without a receipt", () => {
     expect(() => assertDeliveryTransition("NOT_ATTEMPTED", "UNKNOWN", "user_attestation")).not.toThrow();
-    expect(() => assertDeliveryTransition("UNKNOWN", "DELIVERED", "user_attestation")).toThrow(/receipt/);
+    expect(() => assertDeliveryTransition("UNKNOWN", "DELIVERED", "user_attestation")).toThrow(/independent evidence/);
+    expect(() => assertDeliveryTransition("ACCEPTED", "DELIVERED", "smtp_250")).toThrow(/independent evidence/);
+    expect(() => assertDeliveryTransition("ACCEPTED", "DELIVERED", "recipient_reply")).not.toThrow();
     expect(() => assertDeliveryTransition("ACCEPTED", "DELIVERED", "provider_receipt")).not.toThrow();
     expect(() => assertDeliveryTransition("DELIVERED", "FAILED", "provider_receipt")).toThrow();
   });

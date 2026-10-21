@@ -77,8 +77,8 @@ Schedule it daily (cron) and copy off-host. Test restores.
 git pull && docker compose up -d --build   # migrations apply automatically
 ```
 
-## Hostinger email and Google Calendar (later phases)
+## Email
 
-These use your existing accounts directly: Hostinger SMTP `smtp.hostinger.com:465`, IMAP
-`imap.hostinger.com:993`, credentials stored encrypted, and a Google Calendar OAuth client in
-your own Google Cloud project. No third-party relay is involved.
+Add your Hostinger mailbox under **Email → Mailboxes**, test it, then enable it. Set up SPF, DKIM
+and DMARC in DNS before real sending: see [EMAIL.md](EMAIL.md). The worker syncs inboxes every
+5 minutes, so run it (compose does) or use **Check inbox now** in laptop mode.

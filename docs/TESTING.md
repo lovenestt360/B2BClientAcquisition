@@ -46,3 +46,17 @@ for dummy leads go there and never to a fictional number.
 2. Full mode (`--profile ai --profile voice`, providers set to `ollama`/`http`): use the
    microphone with headphones and talk over the agent to check barge-in.
 3. Check the transcript under Calls → Recent (sandbox) → transcript with `interrupted` markers.
+
+## Email with a real Hostinger mailbox
+
+Use a second address you own as the "lead" (add it as a contact with EMAIL consent evidence
+"own test address").
+
+| # | Step | Expected |
+|---|---|---|
+| 1 | Email → Mailboxes → add the mailbox → **Test connection** | Result `ok`; then **Enable** works |
+| 2 | Email → select the test contact → Generate → Approve → **Send now** | Sent row shows "accepted by mail server" (not delivered) |
+| 3 | Check the test inbox | Mail from your sender name, footer with business name + unsubscribe line |
+| 4 | Reply "sounds good, let's talk" → Email → **Check inbox now** | Inbox shows *interested*; the sent row becomes "delivered · recipient replied" |
+| 5 | Reply "unsubscribe" → sync | Address suppressed; drafting for it is now blocked |
+| 6 | Send to a non-existent address at your domain → wait for the bounce → sync | Row shows failed · bounce notice received; address suppressed |

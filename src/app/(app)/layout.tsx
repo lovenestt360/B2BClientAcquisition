@@ -14,14 +14,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = await requireUser();
   const e = env();
   const [halt, counts] = await Promise.all([getHalt(prisma), workQueueCounts(prisma)]);
-  const todayBadge = counts.smsToSend + counts.callsQueued + (can(user.role, "outreach.approve") ? counts.awaitingApproval : 0);
+  const todayBadge = counts.smsToSend + counts.emailsToSend + counts.callsQueued + (can(user.role, "outreach.approve") ? counts.awaitingApproval : 0);
 
   const groups: NavGroup[] = [
     {
       label: "Outreach",
       items: [
         { href: "/today", label: "Today", icon: "✅", badge: todayBadge },
+        { href: "/inbox", label: "Inbox", icon: "📥", badge: counts.inboxOpen },
         { href: "/sms", label: "SMS", icon: "💬", badge: counts.smsToSend },
+        { href: "/email", label: "Email", icon: "✉️", badge: counts.emailsToSend },
         { href: "/calls", label: "Calls", icon: "📞", badge: counts.callsQueued },
         { href: "/voice", label: "AI voice", icon: "🎙️" },
       ],
@@ -48,7 +50,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     },
   ];
   const find = (href: string) => groups.flatMap((g) => g.items).find((i) => i.href === href)!;
-  const tabs: NavItem[] = [find("/today"), find("/sms"), find("/calls"), find("/contacts")];
+  const tabs: NavItem[] = [find("/today"), find("/inbox"), find("/sms"), find("/calls")];
 
   const banners = (
     <>

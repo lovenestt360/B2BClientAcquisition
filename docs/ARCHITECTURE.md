@@ -42,6 +42,8 @@
 | `src/server/providers` | provider interfaces, Telkom iPhone adapter, simulated adapters, gated future adapters, airtime ledger |
 | `src/server/messaging` | SMS drafts, approval, hand-off, user-confirmed outcomes, manual replies, state machines |
 | `src/server/voice` | manual call queue/outcomes, AI call guidance, conversation engine, sandbox, STT/TTS clients, SIP (ARI/RTP) scaffolding |
+| `src/server/email` | Hostinger mailboxes (SMTP/IMAP), drafting, crash-safe sending, IMAP sync, bounce/auto-reply parsing, ingestion and reconciliation, simulation |
+| `src/server/inbox.ts` | Unified inbox (email + SMS replies) with Done/Reopen triage |
 | `src/server/ai` | LLM client (Ollama or deterministic mock), SMS generation with invented-detail guardrails |
 | `src/server/jobs` | pg-boss wrapper with `job_records` idempotency keys and retry policies; inline mode for dev/tests |
 
@@ -112,7 +114,9 @@ any unsent ─emergency stop / opt-out─► CANCELLED
 | Provider DLR delivered | `DELIVERED` | `provider_receipt` (only path to DELIVERED) |
 | Simulator | `DELIVERED` | `simulated_receipt` (labelled) |
 
-Email follows the same rule: SMTP 250 = `ACCEPTED`. The system never labels a message "inbox delivered".
+Email: SMTP 250 = `ACCEPTED` (evidence `smtp_250`). Only a recipient reply or auto-reply
+(`recipient_reply` / `recipient_auto_reply`) moves it to `DELIVERED`. A hard DSN bounce makes it
+`FAILED` and suppresses the address. The system never labels a message "inbox delivered". See [EMAIL.md](EMAIL.md).
 
 **Call** (`voice/states.ts`): `QUEUED → DIALING → COMPLETED | NO_ANSWER | BUSY | FAILED`, with
 `DIALING → QUEUED` for "I didn't call". Manual outcomes carry `user_attestation` evidence.

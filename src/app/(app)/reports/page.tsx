@@ -18,6 +18,18 @@ export default async function ReportsPage() {
         <Stat label="Opt-outs" value={r.optOuts} />
         <Stat label="Airtime spend" value={`R${(r.airtimeSpendCents / 100).toFixed(2)}`} hint="estimated + manual entries" />
       </div>
+      <section className="card" data-testid="email-report">
+        <h2 className="mb-2 font-semibold">Email</h2>
+        <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+          <div><p className="text-xs text-slate-500">Sent</p><p className="text-xl font-semibold">{r.email.sent}</p></div>
+          <div><p className="text-xs text-slate-500">Reply rate</p><p className="text-xl font-semibold">{pct(r.email.replyRate)}</p><p className="text-xs text-slate-500">{r.email.interested} interested</p></div>
+          <div><p className="text-xs text-slate-500">Proven delivered</p><p className="text-xl font-semibold">{r.email.deliveredByEvidence}</p><p className="text-xs text-slate-500">via reply / auto-reply</p></div>
+          <div><p className="text-xs text-slate-500">Bounced / failed</p><p className="text-xl font-semibold">{r.email.failed}</p><p className="text-xs text-slate-500">{r.email.unsubscribes} unsubscribed</p></div>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          {r.email.accepted} accepted by the mail server with no further evidence. Server acceptance doesn&apos;t mean it reached the inbox, so it isn&apos;t counted as delivered.
+        </p>
+      </section>
       <section className="card">
         <h2 className="mb-2 font-semibold">Call outcomes (manual iPhone calls)</h2>
         <div className="space-y-1">

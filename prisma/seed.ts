@@ -7,6 +7,7 @@ import { PrismaClient, type PipelineStage } from "@prisma/client";
 import { hashPassword } from "../src/server/auth/password";
 import { normalizeCompanyName, normalizePersonName } from "../src/server/normalize";
 import { seedProviders } from "./seed-providers";
+import { seedSimulatedMailbox } from "../src/server/email/accounts";
 
 const prisma = new PrismaClient();
 
@@ -91,11 +92,14 @@ async function main() {
     });
     const dummies = await prisma.contact.findMany({ where: { isSimulated: true }, orderBy: { email: "asc" } });
     for (const c of dummies.slice(0, 4)) {
-      if (await prisma.marketingPermission.count({ where: { contactId: c.id } })) continue;
-      await prisma.marketingPermission.create({
-        data: { contactId: c.id, channel: "SMS", status: "GRANTED", basis: "CONSENT", evidence: "SIMULATED seed consent (dummy lead)", capturedAt: new Date() },
-      });
+      for (const channel of ["SMS", "EMAIL"] as const) {
+        if (await prisma.marketingPermission.count({ where: { contactId: c.id, channel } })) continue;
+        await prisma.marketingPermission.create({
+          data: { contactId: c.id, channel, status: "GRANTED", basis: "CONSENT", evidence: "SIMULATED seed consent (dummy lead)", capturedAt: new Date() },
+        });
+      }
     }
+    await seedSimulatedMailbox(prisma, true);
     if (dummies[4]) await prisma.contact.update({ where: { id: dummies[4].id }, data: { isExistingCustomer: true } });
   }
   console.log(`Seeded ${users.length} users, ${COMPANIES.length} companies, ${PEOPLE.length} simulated contacts.`);
