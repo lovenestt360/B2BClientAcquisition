@@ -10,6 +10,52 @@ Three voice providers share one `VoiceProvider` interface:
 
 **The platform never has access to native iPhone cellular call audio, and never records calls.**
 
+## AI sales caller
+
+The goal of a call is to **book a meeting**. Before each call the platform prepares, and freezes
+for the whole call:
+
+1. **Lead brief** (`sales/brief.ts`): name, role, company, industry, sourced research facts,
+   past calls, email/SMS replies and CRM notes, plus an angle, opener, tailored pitch, discovery
+   questions and objection answers. The model only rephrases your playbook for this lead. Briefs
+   containing invented numbers, links or contact details fall back to the template.
+2. **Playbook** (`/playbook`): your offer, value points, true proof points, what may be said
+   about price, and the meeting length and format.
+3. **Free slots** (`sales/availability.ts`): your bookable hours minus existing meetings and a
+   buffer, with minimum notice, SA public holidays skipped.
+
+Call flow (`engine.ts`, sales mode):
+
+```
+AI disclosure in your voice + opener + "Do you have two minutes?"
+  ├─ busy        → skip to booking: offer two concrete slots
+  ├─ no          → one respectful objection answer + slots (max 2 tries, then a polite goodbye)
+  └─ yes/other   → 2 discovery questions → tailored pitch → "Would <A> or <B> work better?"
+close: "the first one" / "Thursday at 10" → booked
+       another time → "I can do Friday at 14:00. Shall I lock that in?" → yes → booked
+       price question → your pricing line only; other questions → answer + re-offer
+```
+
+Deterministic rules (never the model) decide opt-outs, the AI-identity answer, human handover,
+yes/no/busy, which slot was chosen, and when to stop asking. The model only words the
+acknowledgements, pitch and objection answers, and falls back to your playbook text if it fails.
+Bookings re-check the slot in a database transaction (`sales/booking.ts`). Sandbox rehearsals are
+saved as **simulated** meetings that never block your diary or move a real lead.
+
+### Real phone calls: what's needed
+
+The brain is transport-independent. To place real calls it needs:
+
+- **A lawful line.** A business SIP trunk or a programmable-voice provider with a South African
+  number whose terms allow automated/AI calls. Never the Telkom consumer SIM.
+- **A lawful audience.** Under POPIA s69 an AI that calls by itself is an "automatic calling
+  machine". It may only call people who **opted in** or who are **existing customers** (with an
+  opt-out). Cold leads without consent are called by you (iPhone + AI talking points); the AI
+  calls those who said yes, asked for a callback, or are customers. `checkEligibility()`
+  enforces this for `VOICE_AUTOMATED`.
+- **A media server.** Vercel can't stream call audio. The voice pipeline (faster-whisper,
+  Chatterbox with your voice, Ollama) runs on your own machine or VPS.
+
 ## Conversation engine (`src/server/voice/engine.ts`)
 
 The engine is transport-independent and its state is plain JSON. A transport feeds it events and

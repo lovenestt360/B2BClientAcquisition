@@ -78,9 +78,10 @@ test.describe.serial("iPhone-assisted SMS & calling, voice sandbox", () => {
   test("voice sandbox: AI disclosure, truthful identity answer, emergency hang-up, transcript stored", async ({ page }) => {
     await signIn(page);
     await page.goto("/voice");
+    await page.getByLabel("Lead to call").selectOption({ label: "No lead (generic conversation)" });
     await page.getByRole("button", { name: "Start simulated call" }).click();
     const t = page.getByTestId("sandbox-transcript");
-    await expect(t).toContainText("this is an AI assistant calling on behalf of Demo Co");
+    await expect(t).toContainText("Hi there, this is an AI assistant calling on behalf of Demo Co.");
     await page.getByLabel("Your reply").fill("Hang on, are you a robot?");
     await page.getByRole("button", { name: "Say" }).click();
     await expect(t).toContainText("Yes, I'm an AI assistant calling on behalf of Demo Co");

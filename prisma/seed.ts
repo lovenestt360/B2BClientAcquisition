@@ -106,6 +106,24 @@ async function main() {
       }
     }
     await seedSimulatedMailbox(prisma, true);
+    // Demo playbook so the AI caller can be tried immediately; replace it on the Sales playbook page.
+    if (!(await prisma.systemSetting.findUnique({ where: { key: "sales.playbook" } }))) {
+      await prisma.systemSetting.create({
+        data: {
+          key: "sales.playbook",
+          value: {
+            ownerName: "the team",
+            offer: "DEMO: We help South African operations teams automate admin such as dispatch, scheduling and reporting.",
+            idealCustomer: "SA businesses with 10–200 staff and manual operations admin",
+            valueProps: ["Cut repetitive admin hours in half", "Fewer errors in dispatch and delivery paperwork"],
+            proofPoints: [],
+            pricingGuidance: "Pricing depends on scope; we'd cover it properly in the meeting.",
+            meetingLengthMin: 20,
+            meetingFormat: "video call",
+          },
+        },
+      });
+    }
     if (dummies[4]) await prisma.contact.update({ where: { id: dummies[4].id }, data: { isExistingCustomer: true } });
   }
   console.log(`Seeded ${seededUsers.length} user(s), ${COMPANIES.length} companies, ${PEOPLE.length} simulated contacts.`);

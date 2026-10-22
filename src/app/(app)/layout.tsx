@@ -25,13 +25,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         { href: "/sms", label: "SMS", icon: "💬", badge: counts.smsToSend },
         { href: "/email", label: "Email", icon: "✉️", badge: counts.emailsToSend },
         { href: "/calls", label: "Calls", icon: "📞", badge: counts.callsQueued },
-        { href: "/voice", label: "AI voice", icon: "🎙️" },
+        { href: "/voice", label: "AI caller", icon: "🎙️" },
       ],
     },
     {
       label: "CRM",
       items: [
         { href: "/", label: "Dashboard", icon: "📊" },
+        { href: "/meetings", label: "Meetings", icon: "🗓️" },
         { href: "/contacts", label: "Contacts", icon: "👥" },
         { href: "/companies", label: "Companies", icon: "🏢" },
         { href: "/import", label: "Import", icon: "⬆️" },
@@ -41,6 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     {
       label: "Settings",
       items: [
+        { href: "/playbook", label: "Sales playbook", icon: "🎯" },
         { href: "/compliance", label: "Compliance", icon: "🛡️" },
         { href: "/providers", label: "Providers", icon: "📡" },
         { href: "/connect", label: "Connect phone", icon: "📱" },

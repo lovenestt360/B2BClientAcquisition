@@ -9,12 +9,28 @@ type Action =
   | { type: "transfer_to_human" }
   | { type: "end_call"; reason: string };
 
+interface Brief {
+  firstName: string;
+  lastName: string | null;
+  title: string | null;
+  company: string | null;
+  industry: string | null;
+  angle: string;
+  pitch: string;
+  discoveryQuestions: string[];
+  facts: { field: string; value: string; sourceUrl: string }[];
+  history: string[];
+  generatedBy: string;
+}
+
 interface Resp {
   callId: string;
   phase: string;
   actions: Action[];
   transcript: { seq: number; speaker: string; text: string; interrupted: boolean }[];
   silenceTimeoutMs: number;
+  brief?: Brief;
+  booking?: { startIso: string; label: string; status: string };
   error?: string;
 }
 
@@ -23,8 +39,21 @@ const SPEECH_RMS_WHILE_AGENT = 0.09;
 const MIN_SPEECH_MS = 250;
 const END_SILENCE_MS = 900;
 
-export function VoiceSandbox({ agents, sttEnabled, ttsEnabled }: { agents: { id: string; name: string }[]; sttEnabled: boolean; ttsEnabled: boolean }) {
+export function VoiceSandbox({
+  agents,
+  leads,
+  sttEnabled,
+  ttsEnabled,
+}: {
+  agents: { id: string; name: string }[];
+  leads: { id: string; label: string }[];
+  sttEnabled: boolean;
+  ttsEnabled: boolean;
+}) {
   const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
+  const [leadId, setLeadId] = useState(leads[0]?.id ?? "");
+  const [brief, setBrief] = useState<Brief | null>(null);
+  const [booking, setBooking] = useState<Resp["booking"] | null>(null);
   const [callId, setCallId] = useState<string | null>(null);
   const [phase, setPhase] = useState("idle");
   const [transcript, setTranscript] = useState<Resp["transcript"]>([]);
@@ -103,6 +132,8 @@ export function VoiceSandbox({ agents, sttEnabled, ttsEnabled }: { agents: { id:
 
   function apply(r: Resp) {
     setTranscript(r.transcript);
+    if (r.brief) setBrief(r.brief);
+    if (r.booking) setBooking(r.booking);
     setPhase(r.phase);
     for (const a of r.actions) {
       if (a.type === "speak") play(a);
@@ -122,7 +153,13 @@ export function VoiceSandbox({ agents, sttEnabled, ttsEnabled }: { agents: { id:
     setError(null);
     setStatus(null);
     setTranscript([]);
-    const res = await fetch("/api/voice/sandbox", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ voiceAgentId: agentId }) });
+    setBrief(null);
+    setBooking(null);
+    const res = await fetch("/api/voice/sandbox", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ voiceAgentId: agentId, contactId: leadId || null }),
+    });
     const data = (await res.json()) as Resp;
     if (!res.ok) return setError(data.error ?? "Could not start");
     callRef.current = data.callId;
@@ -216,6 +253,13 @@ export function VoiceSandbox({ agents, sttEnabled, ttsEnabled }: { agents: { id:
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-0 flex-1">
+          <label className="label" htmlFor="lead">Lead to call</label>
+          <select id="lead" className="input" value={leadId} onChange={(e) => setLeadId(e.target.value)} disabled={!!live}>
+            <option value="">No lead (generic conversation)</option>
+            {leads.map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+          </select>
+        </div>
+        <div className="min-w-0 flex-1">
           <label className="label" htmlFor="agent">Voice agent</label>
           <select id="agent" className="input" value={agentId} onChange={(e) => setAgentId(e.target.value)} disabled={!!live}>
             {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -238,6 +282,29 @@ export function VoiceSandbox({ agents, sttEnabled, ttsEnabled }: { agents: { id:
         <span className="badge bg-slate-100">TTS: {ttsEnabled ? "Chatterbox" : "browser voice (mock)"}</span>
         <span className="badge bg-slate-100">STT: {sttEnabled ? "faster-whisper" : "type replies (mock)"}</span>
       </div>
+
+      {booking && (
+        <p className="rounded-lg bg-green-50 p-3 text-sm text-green-900" role="status" data-testid="sandbox-booking">
+          🗓️ Meeting booked: <strong>{booking.label}</strong>
+          {booking.status === "simulated" && " (rehearsal: saved as simulated, not added to your diary)"}
+        </p>
+      )}
+      {brief && (
+        <details className="rounded-lg border border-slate-200 bg-white p-3 text-sm" open data-testid="sandbox-brief">
+          <summary className="cursor-pointer font-medium">
+            Lead brief: {brief.firstName} {brief.lastName ?? ""}{brief.title ? `, ${brief.title}` : ""}{brief.company ? ` at ${brief.company}` : ""} <span className="text-xs text-slate-500">({brief.generatedBy})</span>
+          </summary>
+          <p className="mt-2"><strong>Angle:</strong> {brief.angle}</p>
+          <p className="mt-1"><strong>Pitch:</strong> {brief.pitch}</p>
+          <p className="mt-1"><strong>Discovery:</strong> {brief.discoveryQuestions.join(" · ")}</p>
+          {brief.facts.length > 0 && (
+            <ul className="mt-1 list-disc pl-5 text-xs">
+              {brief.facts.map((f, i) => <li key={i}>{f.field.replace(/_/g, " ")}: {f.value} <a className="text-brand-700 underline" href={f.sourceUrl} target="_blank" rel="noreferrer">source</a></li>)}
+            </ul>
+          )}
+          {brief.history.length > 0 && <ul className="mt-1 list-disc pl-5 text-xs text-slate-600">{brief.history.map((h, i) => <li key={i}>{h}</li>)}</ul>}
+        </details>
+      )}
 
       <div className="card max-h-96 space-y-2 overflow-y-auto" aria-live="polite" data-testid="sandbox-transcript">
         {transcript.length === 0 && <p className="muted">Start a call. The agent opens by saying it is an AI.</p>}

@@ -6,7 +6,12 @@ import { AppError } from "../errors";
 import { getSenderProfile } from "../compliance/controls";
 import { getLlm, type LlmClient } from "../ai/llm";
 import { getProvider } from "../providers/registry";
-import { ConversationEngine, validateDisclosure, type EngineAction, type EngineEvent, type EngineState } from "./engine";
+import { ConversationEngine, validateDisclosure, type EngineAction, type EngineEvent, type EngineState, type SalesConfig } from "./engine";
+import { getPlaybook, playbookReady } from "../sales/playbook";
+import { busyMeetings, freeSlots, getAvailability, slotLabel } from "../sales/availability";
+import { buildLeadBrief, type LeadBrief } from "../sales/brief";
+import { bookFromCall } from "../sales/booking";
+import { now as clockNow } from "../clock";
 import { getStt, getTts, type SttClient, type TtsClient } from "./speech";
 
 type Actor = { id: string; role: string };
@@ -23,9 +28,15 @@ export interface SandboxResponse {
   actions: (EngineAction & { audioBase64?: string; audioMime?: string })[];
   transcript: { seq: number; speaker: string; text: string; interrupted: boolean }[];
   silenceTimeoutMs: number;
+  brief?: LeadBrief;
+  booking?: { startIso: string; label: string; status: string };
 }
 
-async function engineFor(db: Db, agent: VoiceAgentConfig, llm: LlmClient, state?: EngineState) {
+interface CallGuidance {
+  sales?: SalesConfig;
+}
+
+async function engineFor(db: Db, agent: VoiceAgentConfig, llm: LlmClient, state?: EngineState, sales?: SalesConfig) {
   const sender = await getSenderProfile(db);
   return new ConversationEngine(
     {
@@ -36,6 +47,7 @@ async function engineFor(db: Db, agent: VoiceAgentConfig, llm: LlmClient, state?
       silenceTimeoutMs: agent.silenceTimeoutMs,
       maxSilenceReprompts: agent.maxSilenceReprompts,
       maxTurns: agent.maxTurns,
+      sales,
     },
     llm,
     state,
@@ -43,7 +55,15 @@ async function engineFor(db: Db, agent: VoiceAgentConfig, llm: LlmClient, state?
 }
 
 /** Persist new turns and interruption flags; record engine events. */
-async function persist(tx: Db, callId: string, before: EngineState | null, after: EngineState, actions: EngineAction[], event: EngineEvent) {
+async function persist(
+  tx: Db,
+  callId: string,
+  before: EngineState | null,
+  after: EngineState,
+  actions: EngineAction[],
+  event: EngineEvent,
+  ctx: { sales?: SalesConfig; contactId?: string | null; businessName?: string } = {},
+) {
   const known = new Map((before?.turns ?? []).map((t) => [t.seq, t]));
   for (const t of after.turns) {
     const prev = known.get(t.seq);
@@ -56,13 +76,32 @@ async function persist(tx: Db, callId: string, before: EngineState | null, after
   const type =
     event.type === "user_speech_started" && actions.some((a) => a.type === "stop_speaking") ? "barge_in" : event.type;
   await tx.callEvent.create({ data: { callId, type, evidence: "sandbox", data: { actions: actions.map((a) => a.type) } as Prisma.InputJsonValue } });
+  const book = actions.find((a) => a.type === "book_meeting") as Extract<EngineAction, { type: "book_meeting" }> | undefined;
+  if (book && ctx.sales && ctx.contactId) {
+    await bookFromCall(tx, {
+      callId,
+      contactId: ctx.contactId,
+      startIso: book.startIso,
+      label: book.label,
+      lengthMin: ctx.sales.playbook.meetingLengthMin,
+      title: `${ctx.businessName || "Meeting"} × ${ctx.sales.brief.company ?? `${ctx.sales.brief.firstName} ${ctx.sales.brief.lastName ?? ""}`.trim()}`,
+      simulated: true, // the sandbox is always a rehearsal
+    });
+  }
   const end = actions.find((a) => a.type === "end_call") as Extract<EngineAction, { type: "end_call" }> | undefined;
+  const outcome = after.sales?.booked
+    ? "MEETING_BOOKED"
+    : after.optOut
+      ? "OPT_OUT_REQUESTED"
+      : after.sales?.stage === "closed_no"
+        ? "CONNECTED_NOT_INTERESTED"
+        : "OTHER";
   await tx.call.update({
     where: { id: callId },
     data: {
       engineState: after as unknown as Prisma.InputJsonValue,
       ...(end || after.phase === "human_takeover"
-        ? { status: "COMPLETED", endedAt: new Date(), notes: `sandbox ended: ${end?.reason ?? "human_takeover"}`, outcome: after.optOut ? "OPT_OUT_REQUESTED" : "OTHER" }
+        ? { status: "COMPLETED", endedAt: new Date(), notes: `sandbox ended: ${end?.reason ?? "human_takeover"}`, outcome }
         : {}),
     },
   });
@@ -80,15 +119,39 @@ async function withAudio(actions: EngineAction[], tts: TtsClient, agent: VoiceAg
   return out;
 }
 
-async function respond(db: Db, callId: string, agent: VoiceAgentConfig, actions: SandboxResponse["actions"], state: EngineState): Promise<SandboxResponse> {
+async function respond(
+  db: Db,
+  callId: string,
+  agent: VoiceAgentConfig,
+  actions: SandboxResponse["actions"],
+  state: EngineState,
+  sales?: SalesConfig,
+): Promise<SandboxResponse> {
   const transcript = await db.callTranscript.findMany({ where: { callId }, orderBy: { seq: "asc" } });
+  const meeting = state.sales?.booked ? await db.meeting.findFirst({ where: { callId }, orderBy: { createdAt: "desc" } }) : null;
   return {
     callId,
     phase: state.phase,
     actions,
     transcript: transcript.map((t) => ({ seq: t.seq, speaker: t.speaker, text: t.text, interrupted: t.interrupted })),
     silenceTimeoutMs: agent.silenceTimeoutMs,
+    brief: sales?.brief,
+    booking: meeting
+      ? { startIso: meeting.startsAt.toISOString(), label: slotLabel(meeting.startsAt, sales?.timeZone), status: meeting.status }
+      : undefined,
   };
+}
+
+/** Freeze everything the sales call needs at the start, so every turn uses the same brief and slots. */
+async function prepareSales(db: Db, contactId: string, llm: LlmClient): Promise<SalesConfig> {
+  const playbook = await getPlaybook(db);
+  const missing = playbookReady(playbook);
+  if (missing.length) throw new AppError(`Set up your sales playbook first (AI voice → Sales playbook): ${missing.join(", ")}`);
+  const avail = await getAvailability(db);
+  const t = clockNow();
+  const slots = freeSlots(t, avail, await busyMeetings(db, t), 40).map((d) => d.toISOString());
+  const brief = await buildLeadBrief(db, contactId, playbook, llm);
+  return { brief, playbook, freeSlots: slots, timeZone: avail.timeZone, maxCloseAttempts: 2 };
 }
 
 export async function startSandbox(db: Db, p: { voiceAgentId: string; contactId?: string | null }, actor: Actor, deps: SandboxDeps = {}) {
@@ -97,7 +160,8 @@ export async function startSandbox(db: Db, p: { voiceAgentId: string; contactId?
   const err = validateDisclosure(agent.disclosureText);
   if (err) throw new AppError(err);
   const llm = deps.llm ?? getLlm();
-  const engine = await engineFor(db, agent, llm);
+  const sales = p.contactId ? await prepareSales(db, p.contactId, llm) : undefined;
+  const engine = await engineFor(db, agent, llm, undefined, sales);
   // Close this user's earlier sessions that were left open (tab closed / navigated away).
   const stale = await db.call.findMany({ where: { providerKey: "local_ai_sandbox", status: "IN_PROGRESS", createdById: actor.id }, select: { id: true } });
   for (const s of stale) {
@@ -114,13 +178,14 @@ export async function startSandbox(db: Db, p: { voiceAgentId: string; contactId?
       startedAt: new Date(),
       idempotencyKey: `sandbox:${crypto.randomUUID()}`,
       createdById: actor.id,
+      guidance: (sales ? { sales } : {}) as unknown as Prisma.InputJsonValue,
     },
   });
   const ev: EngineEvent = { type: "start" };
   const actions = await engine.handle(ev);
   await persist(db, call.id, null, engine.state, actions, ev);
-  await audit(db, { actorId: actor.id, action: "voice.sandbox_start", entityType: "call", entityId: call.id, metadata: { agent: agent.name, llm: llm.name } });
-  return respond(db, call.id, agent, await withAudio(actions, deps.tts ?? getTts(), agent), engine.state);
+  await audit(db, { actorId: actor.id, action: "voice.sandbox_start", entityType: "call", entityId: call.id, metadata: { agent: agent.name, llm: llm.name, lead: p.contactId ?? null } });
+  return respond(db, call.id, agent, await withAudio(actions, deps.tts ?? getTts(), agent), engine.state, sales);
 }
 
 export const sandboxEventInput = z.discriminatedUnion("type", [
@@ -140,24 +205,26 @@ export const sandboxEventInput = z.discriminatedUnion("type", [
 export async function sandboxEvent(db: Db, callId: string, raw: unknown, actor: Actor, deps: SandboxDeps = {}) {
   const event = sandboxEventInput.parse(raw);
   const llm = deps.llm ?? getLlm();
-  const { agent, actions, state } = await db.$transaction(
+  const { agent, actions, state, sales } = await db.$transaction(
     async (tx) => {
       await tx.$queryRaw`SELECT id FROM calls WHERE id = ${callId} FOR UPDATE`;
       const call = await tx.call.findUniqueOrThrow({ where: { id: callId }, include: { voiceAgent: true } });
       if (call.providerKey !== "local_ai_sandbox") throw new AppError("Not a sandbox call");
       if (!call.voiceAgent) throw new AppError("Voice agent missing");
       const before = call.engineState as unknown as EngineState;
-      const engine = await engineFor(tx as Db, call.voiceAgent, llm, before);
+      const sales = (call.guidance as CallGuidance | null)?.sales;
+      const engine = await engineFor(tx as Db, call.voiceAgent, llm, before, sales);
       const actions = await engine.handle(event as EngineEvent);
-      await persist(tx as Db, callId, before, engine.state, actions, event as EngineEvent);
-      return { agent: call.voiceAgent, actions, state: engine.state };
+      const { businessName } = await getSenderProfile(tx as Db);
+      await persist(tx as Db, callId, before, engine.state, actions, event as EngineEvent, { sales, contactId: call.contactId, businessName });
+      return { agent: call.voiceAgent, actions, state: engine.state, sales };
     },
     { timeout: 90_000 },
   );
   if (event.type === "emergency_hangup" || event.type === "human_takeover") {
     await audit(db, { actorId: actor.id, action: `voice.${event.type}`, entityType: "call", entityId: callId });
   }
-  return respond(db, callId, agent, await withAudio(actions, deps.tts ?? getTts(), agent), state);
+  return respond(db, callId, agent, await withAudio(actions, deps.tts ?? getTts(), agent), state, sales);
 }
 
 export async function sandboxAudio(db: Db, callId: string, audio: Buffer, mime: string, actor: Actor, deps: SandboxDeps = {}) {

@@ -740,9 +740,13 @@ model Meeting {
   title           String
   startsAt        DateTime
   endsAt          DateTime
-  status          String   @default("scheduled")
+  status          String   @default("scheduled") // tentative (not yet on a calendar) | scheduled | cancelled | completed
+  source          String   @default("manual") // ai_call | manual_call | manual
+  callId          String?
+  notes           String?
   createdAt       DateTime @default(now())
 
+  @@index([startsAt])
   @@map("meetings")
 }
 

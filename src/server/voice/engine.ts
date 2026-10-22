@@ -12,6 +12,10 @@
  *     emergency_hangup                    → immediate END, no further speech
  */
 import type { ChatMessage, LlmClient } from "../ai/llm";
+import type { LeadBrief } from "../sales/brief";
+import type { Playbook } from "../sales/playbook";
+import { classifyIntent, isPriceQuestion, matchSlot } from "../sales/intent";
+import { pickTwo, slotLabel } from "../sales/availability";
 
 export type Phase = "idle" | "speaking" | "listening" | "thinking" | "human_takeover" | "ended";
 
@@ -33,6 +37,18 @@ export interface EngineState {
   endedReason?: EndReason;
   optOut: boolean;
   humanRequested: boolean;
+  sales?: SalesState;
+}
+
+/** Sales call progress: permission → discovery → close (offer slots) → booked. */
+export interface SalesState {
+  stage: "permission" | "discovery" | "close" | "booked" | "closed_no";
+  discoveryAsked: number;
+  closeAttempts: number;
+  offered: string[]; // ISO starts offered most recently
+  everOffered: string[];
+  pending?: string; // alternative slot awaiting confirmation
+  booked?: string;
 }
 
 export type EndReason = "completed" | "opt_out" | "silence" | "max_turns" | "hangup" | "emergency_hangup" | "human_takeover" | "error";
@@ -52,6 +68,7 @@ export type EngineAction =
   | { type: "stop_speaking" }
   | { type: "start_silence_timer"; ms: number }
   | { type: "transfer_to_human" }
+  | { type: "book_meeting"; startIso: string; label: string }
   | { type: "end_call"; reason: EndReason };
 
 export interface EngineConfig {
@@ -62,6 +79,16 @@ export interface EngineConfig {
   silenceTimeoutMs: number;
   maxSilenceReprompts: number;
   maxTurns: number;
+  /** When set, the agent runs a goal-driven sales call aimed at booking a meeting. */
+  sales?: SalesConfig;
+}
+
+export interface SalesConfig {
+  brief: LeadBrief;
+  playbook: Playbook;
+  freeSlots: string[]; // ISO starts, earliest first
+  timeZone: string;
+  maxCloseAttempts: number; // after this many "no"s, accept it and leave politely
 }
 
 const AI_DISCLOSURE_RE = /\b(AI|artificial intelligence)\b/i;
@@ -99,8 +126,22 @@ export class ConversationEngine {
     switch (event.type) {
       case "start": {
         if (s.phase !== "idle") return [];
-        const disclosure = this.cfg.disclosureText.replaceAll("{business}", this.cfg.businessName || "our company");
-        return [this.say(disclosure)];
+        const sc = this.cfg.sales;
+        const owner = sc?.playbook.ownerName;
+        let disclosure = this.cfg.disclosureText;
+        if (!owner) {
+          // No named owner: drop the owner phrases instead of repeating the business name.
+          disclosure = disclosure
+            .replace(/,?\s*speaking in \{owner\}'s voice/g, "")
+            .replace(/\{owner\} at \{business\}/g, "{business}");
+        }
+        disclosure = disclosure
+          .replaceAll("{business}", this.cfg.businessName || "our company")
+          .replaceAll("{owner}", owner || "our team")
+          .replaceAll("{name}", sc?.brief.firstName ?? "there");
+        if (!sc) return [this.say(disclosure)];
+        s.sales = { stage: "permission", discoveryAsked: 0, closeAttempts: 0, offered: [], everOffered: [] };
+        return [this.say(`${disclosure} ${sc.brief.opener} Do you have two minutes?`)];
       }
       case "agent_playback_finished":
         if (s.phase !== "speaking") return [];
@@ -171,6 +212,8 @@ export class ConversationEngine {
       return [...pre, ...this.endWith("max_turns", "I don't want to take more of your time. I'll follow up by email. Goodbye.")];
     }
 
+    if (this.cfg.sales && s.sales) return [...pre, ...(await this.salesTurn(text))];
+
     s.phase = "thinking";
     let reply: string;
     try {
@@ -195,6 +238,168 @@ export class ConversationEngine {
       .filter((t) => t.speaker !== "system")
       .map((t) => ({ role: t.speaker === "agent" ? "assistant" : "user", content: t.interrupted ? `${t.text} [interrupted]` : t.text }));
     return [{ role: "system", content: system }, ...history];
+  }
+
+
+  // ───────────── Sales flow ─────────────
+
+  private async salesTurn(text: string): Promise<EngineAction[]> {
+    const sc = this.cfg.sales!;
+    const st = this.state.sales!;
+    const intent = classifyIntent(text);
+    const name = sc.brief.firstName;
+
+    if (st.stage === "permission") {
+      if (intent === "busy") {
+        st.stage = "close";
+        return [this.say(`No problem at all. Rather than keep you now, could we book a short ${sc.playbook.meetingLengthMin}-minute ${sc.playbook.meetingFormat}? ${this.offerSlots()}`)];
+      }
+      if (intent === "decline") return this.handleNo(text, true);
+      st.stage = "discovery";
+      st.discoveryAsked = 1;
+      const ack = await this.bridge(text, "acknowledge briefly and warmly that they have a moment");
+      return [this.say(`${ack} ${sc.brief.discoveryQuestions[0]}`)];
+    }
+
+    if (st.stage === "discovery") {
+      if (intent === "decline" || intent === "busy") return this.handleNo(text, true);
+      if (intent === "question") return [this.say(`${await this.answer(text)} ${sc.brief.discoveryQuestions[st.discoveryAsked] ?? ""}`.trim())];
+      if (st.discoveryAsked < Math.min(2, sc.brief.discoveryQuestions.length)) {
+        const ack = await this.bridge(text, "acknowledge what they said in one short sentence, without asking a question");
+        const q = sc.brief.discoveryQuestions[st.discoveryAsked];
+        st.discoveryAsked += 1;
+        return [this.say(`${ack} ${q}`)];
+      }
+      st.stage = "close";
+      const pitch = await this.pitch(text);
+      return [this.say(`${pitch} ${this.offerSlots()}`)];
+    }
+
+    if (st.stage === "close") {
+      // Confirming an alternative we proposed?
+      if (st.pending && intent === "affirm") return this.book(st.pending);
+      const m = matchSlot(text, st.offered, sc.freeSlots, sc.timeZone);
+      if (m?.fromOffer) return this.book(m.iso);
+      if (m) {
+        st.pending = m.iso;
+        return [this.say(`I can do ${this.label(m.iso)}. Shall I lock that in for you?`)];
+      }
+      if (intent === "affirm") return [this.say(`Great. Which suits you better, ${this.label(st.offered[0])} or ${this.label(st.offered[1] ?? st.offered[0])}?`)];
+      if (intent === "question") return [this.say(`${await this.answer(text)} ${this.offerSlots(true)}`)];
+      if (intent === "decline" || intent === "busy") return this.handleNo(text, false);
+      const ack = await this.bridge(text, "respond helpfully in one sentence, then steer back to booking the meeting");
+      return [this.say(`${ack} ${this.offerSlots(true)}`)];
+    }
+    return this.endWith("completed", `Thank you, ${name}. Goodbye.`);
+  }
+
+  /** A "no": handle the objection up to maxCloseAttempts times, then accept it gracefully. */
+  private async handleNo(text: string, early: boolean): Promise<EngineAction[]> {
+    const sc = this.cfg.sales!;
+    const st = this.state.sales!;
+    st.closeAttempts += 1;
+    st.pending = undefined;
+    if (st.closeAttempts > sc.maxCloseAttempts) {
+      st.stage = "closed_no";
+      return this.endWith("completed", `Understood, I won't take more of your time. Thank you, ${sc.brief.firstName}, and have a good day. Goodbye.`);
+    }
+    st.stage = "close";
+    const response = await this.objection(text);
+    const ask = early
+      ? `Would a short ${sc.playbook.meetingLengthMin}-minute ${sc.playbook.meetingFormat} later this week be worth it? ${this.offerSlots()}`
+      : this.offerSlots();
+    return [this.say(`${response} ${ask}`)];
+  }
+
+  private book(iso: string): EngineAction[] {
+    const sc = this.cfg.sales!;
+    const st = this.state.sales!;
+    st.stage = "booked";
+    st.booked = iso;
+    st.pending = undefined;
+    const label = this.label(iso);
+    const invite = sc.brief.email ? "You'll receive a calendar invite at the email address we have for you." : "We'll confirm the details with you shortly.";
+    const confirm = this.say(`Perfect, you're booked for ${label}, a ${sc.playbook.meetingLengthMin}-minute ${sc.playbook.meetingFormat}. ${invite} Thank you, ${sc.brief.firstName}. Goodbye.`);
+    return [confirm, { type: "book_meeting", startIso: iso, label }, ...this.finish("completed")];
+  }
+
+  private offerSlots(fresh = false): string {
+    const sc = this.cfg.sales!;
+    const st = this.state.sales!;
+    const free = sc.freeSlots.map((s) => new Date(s));
+    let two = pickTwo(free, sc.timeZone, fresh ? st.everOffered : []);
+    if (!two.length) two = pickTwo(free, sc.timeZone);
+    st.offered = two.map((d) => d.toISOString());
+    st.everOffered = [...new Set([...st.everOffered, ...st.offered])];
+    if (!two.length) return "I'll ask a colleague to send you some times by email.";
+    if (two.length === 1) return `Would ${this.label(st.offered[0])} work for you?`;
+    return `Would ${this.label(st.offered[0])} or ${this.label(st.offered[1])} work better for you?`;
+  }
+
+  private label(iso: string) {
+    return slotLabel(new Date(iso), this.cfg.sales!.timeZone);
+  }
+
+  // Model calls for wording only; every one has a deterministic fallback.
+  private async bridge(text: string, task: string): Promise<string> {
+    return this.salesLlm(`They said: "${text}". In ONE short sentence: ${task}.`, "Thanks, that's helpful.");
+  }
+
+  private async pitch(text: string): Promise<string> {
+    return this.salesLlm(
+      `They said: "${text}". In at most 3 short sentences, connect the offer to what they said using the brief's pitch, then say the best next step is a short meeting. Don't ask for a time yet.`,
+      this.cfg.sales!.brief.pitch,
+    );
+  }
+
+  private async objection(text: string): Promise<string> {
+    const b = this.cfg.sales!.brief;
+    const t = text.toLowerCase();
+    const known =
+      b.objections.find((o) => o.objection.split(/\s+/).some((w) => w.length > 3 && t.includes(w.toLowerCase())))?.response ??
+      b.objections[0]?.response ??
+      "I understand.";
+    return this.salesLlm(`They objected: "${text}". In at most 2 short sentences, acknowledge respectfully and give one reason a short meeting is still worthwhile. No pressure, no false urgency.`, known);
+  }
+
+  private async answer(text: string): Promise<string> {
+    const p = this.cfg.sales!.playbook;
+    if (isPriceQuestion(text)) return p.pricingGuidance;
+    return this.salesLlm(`They asked: "${text}". Answer in at most 2 short sentences using only the playbook. If the playbook doesn't cover it, say you'll cover it in the meeting.`, "Good question. That's exactly what we'd cover in the meeting.");
+  }
+
+  private async salesLlm(task: string, fallback: string): Promise<string> {
+    if (this.llm.name.startsWith("mock")) return fallback;
+    const sc = this.cfg.sales!;
+    this.state.phase = "thinking";
+    try {
+      const out = (
+        await this.llm.chat(
+          [
+            {
+              role: "system",
+              content: [
+                `You are an AI assistant on a phone call on behalf of ${sc.playbook.ownerName || this.cfg.businessName} at ${this.cfg.businessName}. ${this.cfg.persona}`,
+                "Spoken style: natural, warm, confident, brief. Never claim to be human. Use only the facts below; never invent numbers, clients, prices or promises.",
+                `PLAYBOOK: ${JSON.stringify(sc.playbook)}`,
+                `LEAD BRIEF: ${JSON.stringify({ ...sc.brief, email: undefined })}`,
+                `INSTRUCTIONS: ${this.cfg.instructions}`,
+              ].join("\n"),
+            },
+            ...this.state.turns
+              .filter((t) => t.speaker !== "system")
+              .slice(-8)
+              .map((t) => ({ role: (t.speaker === "agent" ? "assistant" : "user") as "assistant" | "user", content: t.text })),
+            { role: "user", content: `[TASK] ${task}` },
+          ],
+          { temperature: 0.5, maxTokens: 120 },
+        )
+      ).trim();
+      if (!out || CLAIMS_HUMAN_RE.test(out) || /\?$/.test(out.split(/(?<=[.!])\s/).pop() ?? "") && task.includes("without asking")) return fallback;
+      return out.replace(/^["']|["']$/g, "");
+    } catch {
+      return fallback;
+    }
   }
 
   private say(text: string): EngineAction {

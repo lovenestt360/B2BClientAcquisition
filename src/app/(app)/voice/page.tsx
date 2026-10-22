@@ -19,10 +19,18 @@ export default async function VoicePage({ searchParams }: { searchParams: Promis
     prisma.call.findMany({ where: { providerKey: "local_ai_sandbox" }, orderBy: { createdAt: "desc" }, take: 10, include: { _count: { select: { transcripts: true } } } }),
   ]);
   const editing = agents.find((a) => a.id === edit) ?? null;
+  const leads = await prisma.contact.findMany({
+    where: { phoneNumbers: { some: {} } },
+    select: { id: true, firstName: true, lastName: true, isSimulated: true, company: { select: { name: true } } },
+    orderBy: [{ isSimulated: "desc" }, { firstName: "asc" }],
+    take: 200,
+  });
 
   return (
     <div className="space-y-6">
-      <PageHeader title="AI voice" subtitle="Local sandbox only. Automated telephone calling is disabled.">
+      <PageHeader title="AI caller" subtitle="Rehearse AI sales calls with real lead briefs. Real phone calls need an authorised line (below).">
+        <Link className="btn-secondary" href="/playbook">Sales playbook</Link>
+        <Link className="btn-secondary" href="/meetings">Meetings</Link>
         <ModeBadge mode="SIMULATED" />
       </PageHeader>
 
@@ -35,7 +43,10 @@ export default async function VoicePage({ searchParams }: { searchParams: Promis
       <section className="card" aria-labelledby="sb">
         <h2 id="sb" className="mb-2 font-semibold">Sandbox conversation</h2>
         {!sandbox?.enabled ? <Empty>The local AI sandbox provider is disabled.</Empty> : agents.length === 0 ? <Empty>Create a voice agent below.</Empty> : (
-          <VoiceSandbox agents={agents.map((a) => ({ id: a.id, name: a.name }))} sttEnabled={e.STT_PROVIDER === "http"} ttsEnabled={e.TTS_PROVIDER === "http"} />
+          <VoiceSandbox
+            agents={agents.map((a) => ({ id: a.id, name: a.name }))}
+            leads={leads.map((l) => ({ id: l.id, label: `${l.firstName} ${l.lastName ?? ""}${l.company ? ` – ${l.company.name}` : ""}${l.isSimulated ? " (dummy)" : ""}` }))}
+            sttEnabled={e.STT_PROVIDER === "http"} ttsEnabled={e.TTS_PROVIDER === "http"} />
         )}
       </section>
 
@@ -74,7 +85,7 @@ export default async function VoicePage({ searchParams }: { searchParams: Promis
               <Field label="Name" name="name" required defaultValue={editing?.name} />
               <div><label className="label" htmlFor="persona">Persona</label><textarea className="input" id="persona" name="persona" rows={2} required defaultValue={editing?.persona} /></div>
               <div><label className="label" htmlFor="instructions">Call instructions</label><textarea className="input" id="instructions" name="instructions" rows={3} required defaultValue={editing?.instructions} /></div>
-              <Field label='AI disclosure (must say "AI"; {business} is replaced)' name="disclosureText" required defaultValue={editing?.disclosureText ?? "Hi, this is an AI assistant calling on behalf of {business}."} />
+              <Field label='Opening disclosure (must say "AI"; {name}, {owner}, {business} are filled in)' name="disclosureText" required defaultValue={editing?.disclosureText ?? "Hi {name}, this is an AI assistant calling on behalf of {owner} at {business}, speaking in {owner}'s voice."} />
               <Field label="Ollama model" name="llmModel" defaultValue={editing?.llmModel ?? "llama3.1:8b"} />
               <Field label="Chatterbox voice reference file (optional, e.g. my-voice.wav)" name="ttsVoiceRef" defaultValue={editing?.ttsVoiceRef ?? ""} />
               <label className="flex items-start gap-2 text-sm">
