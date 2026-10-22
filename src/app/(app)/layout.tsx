@@ -24,6 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         { href: "/inbox", label: "Inbox", icon: "📥", badge: counts.inboxOpen },
         { href: "/sms", label: "SMS", icon: "💬", badge: counts.smsToSend },
         { href: "/email", label: "Email", icon: "✉️", badge: counts.emailsToSend },
+        { href: "/outreach", label: "Sequences", icon: "🔁" },
         { href: "/calls", label: "Calls", icon: "📞", badge: counts.callsQueued },
         { href: "/voice", label: "AI caller", icon: "🎙️" },
       ],

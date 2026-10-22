@@ -31,6 +31,7 @@ Legend: ✅ implemented and tested · 🟡 schema and interfaces in place, imple
 | 10 | Google Calendar booking & pipeline | 🟡 pipeline ✅ | Pipeline stages on contacts/companies are live; `meetings.googleEventId` reserved |
 | 11 | Unified inbox, scheduling, pause/resume/emergency stop, audit, cost, analytics | ✅ unified inbox (email + SMS, triage), emergency stop, audit, airtime/cost, reports · 🟡 campaign scheduler | Inbox sync runs on a 5-minute schedule |
 | 12 | Country-aware compliance, consent, suppression, approvals, credentials | ✅ | ZA rule pack (POPIA s69, CPA s11/Reg 4), strict default elsewhere |
+| 13 | Email sequences (Klyron SA-CON / SA-PM): evidence-grounded generation, validation, gates, Maputo batches, caps, idempotency, reply/stop watch, reconciliation | ✅ dry run · ⛔ live until approved | See [OUTREACH.md](OUTREACH.md); Launch Command = Stop |
 
 ## Telkom prepaid iPhone channel
 

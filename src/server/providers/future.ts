@@ -86,3 +86,34 @@ export class AsteriskSipAiAdapter extends GatedAutomatedProvider implements Voic
     return this.gate();
   }
 }
+
+/**
+ * Authorisation holder for scheduled email sequences (Hostinger SMTP). Sending itself lives in
+ * server/outreach; this row only carries enablement and the recorded authorisation so the same
+ * automation gate applies.
+ */
+export class EmailSequenceAdapter extends GatedAutomatedProvider implements MessagingProvider {
+  readonly key = "email_sequences";
+  readonly capabilities: ProviderCapabilities = {
+    kinds: ["EMAIL"],
+    mode: "AUTOMATED",
+    automatedSend: true,
+    deliveryReceipts: false,
+    inbound: "none",
+    callAudioAccess: false,
+    callRecording: false,
+    supportedCountries: ["ZA"],
+    limitations: [
+      "Sends approved sequence emails in Maputo business-hour batches through your Hostinger mailbox.",
+      "SMTP acceptance is ACCEPTED only, never proof of inbox delivery.",
+      "Also needs Launch Command = Start and OUTREACH_LIVE_SEND=true; otherwise every batch is a dry run.",
+      "Authorisation reference: record your legal sign-off for the POPIA permission basis.",
+    ],
+  };
+  validateRecipient() {
+    return null;
+  }
+  async prepareSend(): Promise<SmsHandoff> {
+    return this.gate();
+  }
+}

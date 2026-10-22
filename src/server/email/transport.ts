@@ -10,6 +10,8 @@ export interface OutboundEmail {
   text: string;
   messageId: string; // without <>
   headers: Record<string, string>;
+  inReplyTo?: string; // without <>; threads a follow-up under the previous message
+  references?: string[];
 }
 
 export interface SendResult {
@@ -65,6 +67,8 @@ export class SmtpTransport implements MailTransport {
       subject: msg.subject,
       text: msg.text,
       messageId: `<${msg.messageId}>`,
+      inReplyTo: msg.inReplyTo ? `<${msg.inReplyTo}>` : undefined,
+      references: msg.references?.length ? msg.references.map((r) => `<${r}>`) : undefined,
       headers: msg.headers,
     });
     return {
@@ -80,6 +84,16 @@ export class SimulatedTransport implements MailTransport {
   async verify() {}
   async send(msg: OutboundEmail): Promise<SendResult> {
     return { accepted: [msg.to], rejected: [], response: "250 SIMULATED: not sent" };
+  }
+}
+
+/** Dry-run transport: records what would be sent and never opens a connection. */
+export class DryRunTransport implements MailTransport {
+  readonly sent: OutboundEmail[] = [];
+  async verify() {}
+  async send(msg: OutboundEmail): Promise<SendResult> {
+    this.sent.push(msg);
+    return { accepted: [msg.to], rejected: [], response: "250 DRY-RUN: not sent" };
   }
 }
 

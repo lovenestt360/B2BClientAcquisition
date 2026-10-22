@@ -4,7 +4,7 @@ import { audit } from "../audit";
 import { AppError } from "../errors";
 import { TelkomPrepaidIPhoneAdapter } from "./telkom-iphone";
 import { LocalAiSandboxAdapter, SimulatedSmsAdapter } from "./simulated";
-import { AndroidSmsGatewayAdapter, AsteriskSipAiAdapter, BusinessSmsApiAdapter } from "./future";
+import { AndroidSmsGatewayAdapter, AsteriskSipAiAdapter, BusinessSmsApiAdapter, EmailSequenceAdapter } from "./future";
 import { automationBlockers } from "./gate";
 import type { MessagingProvider, ProviderRuntimeConfig, VoiceProvider } from "./types";
 
@@ -25,6 +25,7 @@ export const DEFINITIONS: Definition[] = [
   { key: "business_sms_api", kind: "SMS", adapter: "BusinessSmsApiAdapter", displayName: "Business SMS API (future)", mode: "AUTOMATED" },
   { key: "android_sms_gateway", kind: "SMS", adapter: "AndroidSmsGatewayAdapter", displayName: "Android SMS gateway (future)", mode: "AUTOMATED" },
   { key: "asterisk_sip_ai", kind: "VOICE", adapter: "AsteriskSipAiAdapter", displayName: "Asterisk SIP AI calling (future)", mode: "AUTOMATED" },
+  { key: "email_sequences", kind: "EMAIL", adapter: "EmailSequenceAdapter", displayName: "Scheduled email sequences (Hostinger)", mode: "AUTOMATED" },
 ];
 
 export function toRuntime(c: ProviderConfig): ProviderRuntimeConfig {
@@ -53,6 +54,8 @@ export function instantiate(c: ProviderConfig): MessagingProvider | VoiceProvide
       return new AndroidSmsGatewayAdapter(rt);
     case "AsteriskSipAiAdapter":
       return new AsteriskSipAiAdapter(rt);
+    case "EmailSequenceAdapter":
+      return new EmailSequenceAdapter(rt);
     default:
       throw new AppError(`Unknown adapter ${c.adapter}`);
   }

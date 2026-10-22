@@ -47,7 +47,12 @@ test.describe.serial("iPhone-assisted SMS & calling, voice sandbox", () => {
     await expect(ready.getByText(/Dummy lead: Messages opens addressed to your test number \+27829990000/)).toBeVisible();
     await expect(ready.getByRole("link", { name: "Tap here" })).toHaveAttribute("href", /^sms:\+27829990000&body=Demo%20Co%3A/);
 
-    await ready.getByRole("button", { name: "I sent it" }).click();
+    // Back from Messages: continue in a fresh tab. Headless Chromium ignores pointer input in a tab
+    // after an attempted sms: navigation (its external-protocol handling); a phone switches apps.
+    page = await page.context().newPage();
+    await page.goto("/sms");
+    await page.getByTestId("ready-draft").getByRole("button", { name: "I sent it" }).click();
+    await expect(page.getByTestId("ready-draft")).toHaveCount(0);
     await page.reload();
     await expect(page.getByRole("row", { name: /Aisha Patel/ })).toContainText("delivery unknown");
 
@@ -68,10 +73,12 @@ test.describe.serial("iPhone-assisted SMS & calling, voice sandbox", () => {
     await expect(card).toContainText("cannot access iPhone call audio");
     await card.getByRole("button", { name: /Call Johan/ }).click();
     await expect(card.getByRole("link", { name: "Tap here" })).toHaveAttribute("href", "tel:+27829990000");
-    await page.reload();
-    await card.getByLabel("Outcome").selectOption("MEETING_BOOKED");
-    await card.getByLabel("Duration in minutes").fill("3");
-    await card.getByRole("button", { name: "Save outcome" }).click();
+    page = await page.context().newPage(); // back from the Phone app (see the SMS test)
+    await page.goto("/calls");
+    const after = page.getByTestId("queued-call").filter({ hasText: "Johan Botha" });
+    await after.getByLabel("Outcome").selectOption("MEETING_BOOKED");
+    await after.getByLabel("Duration in minutes").fill("3");
+    await after.getByRole("button", { name: "Save outcome" }).click();
     await expect(page.getByRole("row", { name: /Johan Botha/ })).toContainText("meeting booked");
   });
 

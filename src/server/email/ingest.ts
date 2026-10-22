@@ -7,6 +7,7 @@ import { recordOptOut } from "../compliance/controls";
 import { assertDeliveryTransition, type Evidence } from "../messaging/states";
 import { classifyReply } from "../ai/classify";
 import { getLlm, type LlmClient } from "../ai/llm";
+import { applyInboundToSequences } from "../outreach/stops";
 import { fromAddress, isAutoReply, parseBounce, ruleLabel, stripQuoted, toAddresses, type ReplyLabel } from "./parse";
 
 const stripId = (s: string | undefined | null) => (s ? s.trim().replace(/^<|>$/g, "") : null);
@@ -115,6 +116,9 @@ export async function ingestRawEmail(db: Db, accountId: string, raw: Buffer, dep
   if (contactId && (label === "interested" || label === "question")) {
     await db.contact.updateMany({ where: { id: contactId, stage: { in: ["NEW", "RESEARCHING", "QUALIFIED", "CONTACTED"] } }, data: { stage: "ENGAGED" } });
   }
+
+  // ── Email sequences: reply / opt-out / bounce stops ──
+  await applyInboundToSequences(db, stored, { relatedMessageIds: [bounce?.originalMessageId ?? "", ...refs], bounceRecipient: bounce?.recipient ?? null });
 
   await audit(db, {
     actorType: "job",

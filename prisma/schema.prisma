@@ -120,6 +120,7 @@ model Contact {
   email            String?       @unique // lowercased
   emailSource      String? // import:<batchId> | manual | url
   emailVerifiedAt  DateTime?
+  emailVerificationStatus String? // Valid | Risky | Invalid | Catch-all | Not checked (from your verifier)
   linkedinUrl      String?
   country          String? // ISO-3166 alpha-2; drives compliance rules
   isExistingCustomer Boolean     @default(false) // POPIA s69(3) basis
@@ -141,6 +142,8 @@ model Contact {
   linkedinDrafts LinkedinDraft[]
   meetings       Meeting[]
   leadScores     LeadScore[]
+  researchFacts  ResearchFact[]
+  outreachSends  OutreachSend[]
 
   @@index([companyId])
   @@index([fullNameNormalized])
@@ -230,8 +233,12 @@ model ImportRow {
 
 model ResearchFact {
   id         String   @id @default(cuid())
-  companyId  String
-  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId  String?
+  company    Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contactId  String?
+  contact    Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  kind       String   @default("fact") // fact | project | role | need_evidence
+  isInference Boolean @default(false) // true = hypothesis/inference, never stated as fact
   field      String // e.g. employee_count, tech_stack
   value      String
   sourceUrl  String // required: no unsourced facts
@@ -240,6 +247,7 @@ model ResearchFact {
   createdAt  DateTime @default(now())
 
   @@index([companyId])
+  @@index([contactId])
   @@map("research_facts")
 }
 
@@ -416,6 +424,8 @@ enum CampaignStatus {
 
 model Campaign {
   id                 String         @id @default(cuid())
+  key                String?        @unique // e.g. SA-CON; set from outreach config
+  country            String? // ISO code the campaign is restricted to
   name               String
   status             CampaignStatus @default(DRAFT)
   icpDescription     String?
@@ -434,6 +444,8 @@ model Campaign {
   drafts     MessageDraft[]
   calls      Call[]
   leadScores LeadScore[]
+  steps      OutreachStep[]
+  sends      OutreachSend[]
 
   @@map("campaigns")
 }
@@ -445,8 +457,21 @@ model CampaignMember {
   contactId  String
   contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
   addedAt    DateTime @default(now())
+  // Email sequence state (outreach module)
+  state               String    @default("PENDING_APPROVAL") // PENDING_APPROVAL | ACTIVE | HOLD | RESEARCH_REQUIRED | STOPPED | COMPLETED
+  approvedAt          DateTime? // final lead approval (human)
+  approvedById        String?
+  lastStep            Int       @default(0) // last provider-confirmed step
+  lastConfirmedSendAt DateTime?
+  nextDueAt           DateTime?
+  stopReason          String? // REPLY | BOOKED | OPT_OUT | HARD_BOUNCE | SUPPRESSED | MANUAL
+  holdReason          String?
+  updatedAt           DateTime  @default(now()) @updatedAt
+
+  sends OutreachSend[]
 
   @@unique([campaignId, contactId])
+  @@index([state, nextDueAt])
   @@map("campaign_members")
 }
 
@@ -778,4 +803,57 @@ model CostEntry {
   createdAt   DateTime @default(now())
 
   @@map("cost_entries")
+}
+
+// ───────────────────── Email sequences (outreach) ─────────────────────
+
+/// One step (S01..S0n) of a campaign sequence. waitDays must be approved by a human; null = HOLD.
+model OutreachStep {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  step       Int
+  waitDays   Int? // days after the previous provider-confirmed send; ignored for step 1
+  approved   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([campaignId, step])
+  @@map("outreach_steps")
+}
+
+/// One attempt slot per contact+campaign+step (durable idempotency). Content, decision and outcome.
+model OutreachSend {
+  id                String         @id @default(cuid())
+  idempotencyKey    String         @unique // live: <contact>:<campaignKey>:S0n ; dry-run: dry:<batch>:...
+  campaignId        String
+  campaign          Campaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  memberId          String
+  member            CampaignMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  contactId         String
+  contact           Contact        @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  step              Int
+  dryRun            Boolean        @default(false)
+  // AWAITING_APPROVAL | APPROVED | HELD | RESEARCH_REQUIRED | REJECTED | SENDING | PROVIDER_ACCEPTED | FAILED | UNKNOWN | DRY_RUN
+  status            String
+  reasonCodes       Json? // string[]
+  subject           String?
+  body              String?
+  generation        Json? // full model output contract
+  validation        Json? // validator result
+  generatedBy       String?
+  approvedById      String?
+  approvedAt        DateTime?
+  batchAt           DateTime? // batch slot the send was attempted in
+  messageDraftId    String?        @unique
+  providerMessageId String? // RFC 5322 Message-ID we sent with
+  smtpResponse      String?
+  confirmedAt       DateTime? // provider acceptance time (counts toward caps and due dates)
+  attempts          Int            @default(0)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([status, confirmedAt])
+  @@index([memberId, step])
+  @@map("outreach_sends")
 }

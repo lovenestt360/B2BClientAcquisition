@@ -1,0 +1,169 @@
+{
+  "$comment": "Klyron SA email outreach. Data, not code: edit here or on /outreach. Wait days stay null until a human approves them on /outreach (null = HOLD; never invented). Booking URL stays null until you supply a verified one.",
+  "settings": {
+    "senderName": "Mário Quissico",
+    "signature": "Mário Quissico\nKlyron Consulting",
+    "businessName": "Klyron Consulting",
+    "brandLine": "Precision Before, During and Beyond Construction.",
+    "bookingUrl": null,
+    "approvedLinkDomains": ["klyronconsulting.com"],
+    "timezone": "Africa/Maputo",
+    "sendDays": [1, 2, 3, 4, 5],
+    "batchHours": [9, 10, 11, 12, 13, 14, 15],
+    "batchWindowMinutes": 50,
+    "skipPublicHolidaysOf": "ZA",
+    "hourlyCap": 20,
+    "dailyCap": 140,
+    "acceptedVerificationStatuses": ["Valid"],
+    "minFactConfidence": 0.7,
+    "meetingMinutes": 15,
+    "wordRange": { "min": 55, "max": 90, "hardMin": 40, "hardMax": 130 },
+    "prepareLookaheadHours": 24,
+    "capabilities": [
+      { "id": "coordination", "text": "coordinating multidisciplinary models so conflicts are found and resolved before construction" },
+      { "id": "issue_closure", "text": "prioritising critical issues and driving them to closure with clear ownership" },
+      { "id": "information", "text": "coordinating project information so site teams work from resolved, consistent drawings" },
+      { "id": "assurance", "text": "providing independent model QA/QC and delivery assurance that keeps risks and records visible" },
+      { "id": "capacity", "text": "supporting internal BIM and design teams when they are overloaded" }
+    ],
+    "bannedClaims": [
+      "guarantee", "guaranteed", "100%", "zero rework", "risk-free", "no risk",
+      "as discussed", "as we discussed", "following our conversation", "following up on our call", "per our call",
+      "thanks for your reply", "thank you for your reply", "as promised",
+      "urgent", "act now", "final notice", "last chance", "limited time", "immediately",
+      "before your next milestone", "your recent claim", "your project is delayed", "free trial"
+    ],
+    "exposures": [
+      {
+        "id": "paid_rework", "label": "paid-for installation removed and repeated",
+        "campaigns": ["SA-CON"],
+        "keywords": ["installation", "install", "rework", "mep", "services", "structural", "interface", "clash", "fit-out"],
+        "consequence": "a structural or services interface found only after installation can mean removing work that has already been paid for and repeating it",
+        "stake": "That cost sits on top of the original price and comes straight out of the package margin.",
+        "prevention": "closing those interfaces in the coordinated model before packages reach site",
+        "capability": "coordination",
+        "subjectTopic": "Installation interfaces"
+      },
+      {
+        "id": "material_waste", "label": "wasted purchased and fabricated material",
+        "campaigns": ["SA-CON"],
+        "keywords": ["procurement", "material", "fabrication", "prefabricated", "steel", "precast", "supply", "modular"],
+        "consequence": "material ordered or fabricated against drawings that still hold an open coordination issue can arrive on site unusable",
+        "stake": "The spend is already committed, and replacement orders bring their own lead times.",
+        "prevention": "confirming that coordination is closed before materials are ordered or fabricated",
+        "capability": "information",
+        "subjectTopic": "Coordination before procurement"
+      },
+      {
+        "id": "idle_resources", "label": "crews, plant and subcontractors standing idle",
+        "campaigns": ["SA-CON"],
+        "keywords": ["labour", "crew", "plant", "subcontractor", "subcontract", "work package", "trade", "site team", "programme"],
+        "consequence": "a crew can arrive ready to install and find the area blocked by an unresolved interface, while labour, plant and subcontractors stay on the clock",
+        "stake": "Work stops, but the cost of the resources does not.",
+        "prevention": "releasing work packages only once their interfaces are resolved",
+        "capability": "information",
+        "subjectTopic": "Before the next work package"
+      },
+      {
+        "id": "programme_claims", "label": "programme slippage, prolongation and subcontractor claims",
+        "campaigns": ["SA-CON", "SA-PM"],
+        "keywords": ["programme", "schedule", "delay", "milestone", "phase", "fast-track", "claim", "prolongation", "time"],
+        "consequence": "one late design conflict on a critical package can push the programme and open the door to prolongation and subcontractor claims",
+        "stake": "Time-related costs grow every week the issue stays open.",
+        "prevention": "keeping critical-path interfaces visible and closed ahead of construction",
+        "capability": "issue_closure",
+        "subjectTopic": "Critical package interfaces"
+      },
+      {
+        "id": "margin_disputes", "label": "margin reduction and contract disputes",
+        "campaigns": ["SA-CON"],
+        "keywords": ["margin", "commercial", "contract", "dispute", "jbcc", "nec", "fidic", "variation", "tender"],
+        "consequence": "an unresolved technical decision can turn into a variation dispute over who pays for the change",
+        "stake": "Even when the position is defensible, the argument consumes margin and management time.",
+        "prevention": "recording and closing technical decisions before they become commercial disputes",
+        "capability": "assurance",
+        "subjectTopic": "Technical decisions and variations"
+      },
+      {
+        "id": "issue_ownership", "label": "known issues left open without an owner",
+        "campaigns": ["SA-PM"],
+        "keywords": ["coordination", "design team", "issue", "consultant", "multidisciplinary", "meeting", "ownership", "review"],
+        "consequence": "an interface raised in design meetings but never assigned to an owner can still be open when construction reaches it",
+        "stake": "The contractor may then claim time and cost, and the client will ask the project management team why the risk stayed open.",
+        "prevention": "keeping issue ownership and closure visible until each critical issue is resolved",
+        "capability": "issue_closure",
+        "subjectTopic": "Design issue closure"
+      },
+      {
+        "id": "information_flow", "label": "late or conflicting project information",
+        "campaigns": ["SA-PM", "SA-CON"],
+        "keywords": ["information", "rfi", "drawings", "documentation", "cde", "revision", "submittal", "design"],
+        "consequence": "late or conflicting drawing revisions can leave the contractor working from information the design team has already superseded",
+        "stake": "The resulting rework and requests for information land on the project manager's desk.",
+        "prevention": "making sure every team works from coordinated, current information",
+        "capability": "information",
+        "subjectTopic": "Project information flow"
+      },
+      {
+        "id": "client_reporting", "label": "poor risk visibility in client reporting",
+        "campaigns": ["SA-PM"],
+        "keywords": ["client", "reporting", "risk", "governance", "programme management", "portfolio", "public sector", "employer"],
+        "consequence": "technical risks that never reach the client report can surface later as a cost or time surprise",
+        "stake": "That kind of surprise damages client confidence faster than the issue itself.",
+        "prevention": "making technical risk visible and current in client reporting",
+        "capability": "assurance",
+        "subjectTopic": "Technical risk in client reporting"
+      },
+      {
+        "id": "compliance_records", "label": "weak records complicating approvals, payment or handover",
+        "campaigns": ["SA-PM", "SA-CON"],
+        "keywords": ["compliance", "handover", "approval", "payment", "close-out", "records", "certification", "municipal", "occupation"],
+        "consequence": "unresolved technical issues or incomplete records can delay approvals, payment certificates or handover",
+        "stake": "Cash flow and the contractual position both suffer while the gaps are chased.",
+        "prevention": "keeping coordination records complete enough to support approvals and handover",
+        "capability": "assurance",
+        "subjectTopic": "Records for approvals and handover"
+      },
+      {
+        "id": "future_appointments", "label": "loss of client confidence and future appointments",
+        "campaigns": ["SA-PM"],
+        "keywords": ["appointment", "reputation", "framework", "repeat", "client", "panel", "tender", "portfolio"],
+        "consequence": "a coordination failure that reaches site can be remembered by the client long after the project closes",
+        "stake": "For a consultancy, that can cost the next appointment rather than one project's fee.",
+        "prevention": "protecting delivery quality so issues are closed before the client sees them",
+        "capability": "capacity",
+        "subjectTopic": "Project delivery"
+      }
+    ]
+  },
+  "campaigns": [
+    {
+      "key": "SA-CON",
+      "name": "SA Contractors",
+      "country": "ZA",
+      "icpDescription": "South African contractors: construction/project managers, technical/design/engineering managers, project directors, managing directors and qualified decision-makers.",
+      "roleKeywords": ["construction manager", "project manager", "technical manager", "design manager", "engineering manager", "project director", "managing director", "director", "contracts manager", "operations director", "ceo", "coo"],
+      "steps": [
+        { "step": 1 },
+        { "step": 2, "waitDays": null },
+        { "step": 3, "waitDays": null },
+        { "step": 4, "waitDays": null },
+        { "step": 5, "waitDays": null }
+      ]
+    },
+    {
+      "key": "SA-PM",
+      "name": "SA Project Management Consultancies",
+      "country": "ZA",
+      "icpDescription": "South African project-management consultancies: project/senior project managers, programme/project directors, directors, managing directors and partners.",
+      "roleKeywords": ["project manager", "senior project manager", "programme director", "program director", "project director", "director", "managing director", "partner", "principal", "ceo"],
+      "steps": [
+        { "step": 1 },
+        { "step": 2, "waitDays": null },
+        { "step": 3, "waitDays": null },
+        { "step": 4, "waitDays": null },
+        { "step": 5, "waitDays": null }
+      ]
+    }
+  ]
+}

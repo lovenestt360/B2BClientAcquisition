@@ -9,6 +9,8 @@ export const QUEUE_POLICIES: Record<QueueName, { retryLimit: number; retryDelay:
   "sms.generate_drafts": { retryLimit: 2, retryDelay: 15, retryBackoff: true },
   "email.send": { retryLimit: 3, retryDelay: 60, retryBackoff: true },
   "email.sync_all": { retryLimit: 1, retryDelay: 60, retryBackoff: false },
+  "outreach.batch": { retryLimit: 1, retryDelay: 120, retryBackoff: false },
+  "outreach.stop_watch": { retryLimit: 1, retryDelay: 120, retryBackoff: false },
 };
 
 let boss: PgBoss | null = null;

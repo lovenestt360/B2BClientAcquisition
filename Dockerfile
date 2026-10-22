@@ -21,6 +21,7 @@ COPY --from=build --chown=app /app/public* ./public/
 COPY --from=build --chown=app /app/package.json /app/next.config.ts /app/tsconfig.json ./
 COPY --from=build --chown=app /app/prisma ./prisma
 COPY --from=build --chown=app /app/src ./src
+COPY --from=build --chown=app /app/config ./config
 USER app
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD node -e "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

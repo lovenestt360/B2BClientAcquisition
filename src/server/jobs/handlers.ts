@@ -3,6 +3,8 @@ import { commitImport } from "../import/service";
 import { generateSmsDrafts } from "../messaging/sms";
 import { sendEmailDraft } from "../email/send";
 import { syncAllAccounts } from "../email/sync";
+import { runOutreachBatch } from "../outreach/sequence";
+import { runStopWatch } from "../outreach/stops";
 
 export const handlers = {
   "import.commit": async (db: Db, p: { batchId: string; userId: string | null }) => {
@@ -20,6 +22,13 @@ export const handlers = {
     return { messageId: m.messageId, deliveryState: m.deliveryState };
   },
   "email.sync_all": async (db: Db) => syncAllAccounts(db),
+  // Sequence batch: live only when every launch condition holds, otherwise a dry run.
+  // Idempotent per prospect + campaign + step, so a retried tick never duplicates a send.
+  "outreach.batch": async (db: Db) => {
+    const r = await runOutreachBatch(db);
+    return { mode: r.mode, slot: r.slot, outcomes: r.outcomes.length };
+  },
+  "outreach.stop_watch": async (db: Db) => runStopWatch(db),
 };
 
 export type QueueName = keyof typeof handlers;

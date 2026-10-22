@@ -26,7 +26,8 @@ test("PWA: manifest, icons, service worker and offline page are public", async (
   expect(await (await request.get("/offline.html")).text()).toContain("Nothing was sent");
 });
 
-test("@mobile phone: lands on Today, drafts on SMS tab, sends from Today", async ({ page }) => {
+test("@mobile phone: lands on Today, drafts on SMS tab, sends from Today", async ({ page: first }) => {
+  let page = first;
   await signIn(page);
   await expect(page).toHaveURL(/\/today$/);
   const tabs = page.getByRole("navigation", { name: "Tabs" });
@@ -45,10 +46,14 @@ test("@mobile phone: lands on Today, drafts on SMS tab, sends from Today", async
   await card.getByRole("button", { name: /Open in Messages/ }).click();
   await expect(card.getByTestId("confirm-outcome")).toBeVisible();
   // Leaving for Messages may reload the page (as iOS Safari often does on return); the
-  // confirmation step comes from server state, so it must survive a reload.
-  await page.reload();
-  await expect(card.getByTestId("confirm-outcome")).toBeVisible();
-  await card.getByRole("button", { name: "I sent it" }).click();
+  // confirmation step comes from server state, so it must survive a fresh load. (A fresh tab also
+  // avoids headless Chromium ignoring input after the attempted sms: navigation.)
+  page = await page.context().newPage();
+  await page.goto("/today");
+  const back = page.getByTestId("ready-draft").filter({ hasText: "Lerato" });
+  await expect(back.getByTestId("confirm-outcome")).toBeVisible();
+  await back.getByRole("button", { name: "I sent it" }).click();
+  await expect(back).toHaveCount(0);
   await page.reload();
   await expect(page.getByTestId("ready-draft").filter({ hasText: "Lerato" })).toHaveCount(0);
   await expect(page.getByTestId("today-stats")).toContainText(/SMS \+ email sent\s*[1-9]/i);

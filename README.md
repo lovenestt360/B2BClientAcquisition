@@ -84,6 +84,7 @@ npm run typecheck
 - [Requirements and status](docs/REQUIREMENTS.md)
 - [Compliance model (POPIA / CPA)](docs/COMPLIANCE.md)
 - [Email: Hostinger setup, delivery evidence, inbox sync](docs/EMAIL.md)
+- [Email sequences: Klyron SA-CON / SA-PM, gates, dry run, going live](docs/OUTREACH.md)
 - [Voice: engine, sandbox, future SIP](docs/VOICE.md)
 - [Testing, including the manual iPhone checklist](docs/TESTING.md)
 - [Deployment](docs/DEPLOYMENT.md) · [Vercel](docs/VERCEL.md)
