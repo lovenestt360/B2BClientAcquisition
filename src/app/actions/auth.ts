@@ -8,10 +8,16 @@ import { login, logout, SESSION_COOKIE, SESSION_TTL_MS } from "@/server/auth/ses
 
 export async function loginAction(_prev: { error?: string } | undefined, form: FormData) {
   const h = await headers();
-  const res = await login(prisma, String(form.get("email") ?? ""), String(form.get("password") ?? ""), {
-    ip: h.get("x-forwarded-for")?.split(",")[0]?.trim(),
-    userAgent: h.get("user-agent") ?? undefined,
-  });
+  let res: Awaited<ReturnType<typeof login>>;
+  try {
+    res = await login(prisma, String(form.get("email") ?? ""), String(form.get("password") ?? ""), {
+      ip: h.get("x-forwarded-for")?.split(",")[0]?.trim(),
+      userAgent: h.get("user-agent") ?? undefined,
+    });
+  } catch (e) {
+    console.error("[login] database error", e);
+    return { error: "The server isn't ready: its database is unreachable or not set up yet. Open /api/health for details." };
+  }
   if ("error" in res) return { error: res.error };
   (await cookies()).set(SESSION_COOKIE, res.token, {
     httpOnly: true,
