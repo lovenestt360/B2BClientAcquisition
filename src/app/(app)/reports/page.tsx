@@ -12,7 +12,7 @@ export default async function ReportsPage() {
       <PageHeader title="Performance" subtitle="Last 30 days. Manual-channel figures come from what you reported." />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="SMS sent (you confirmed)" value={r.smsSent} />
-        <Stat label="Reply rate" value={pct(r.replyRate)} hint={`${r.replies} replies recorded`} />
+        <Stat label="SMS reply rate" value={pct(r.replyRate)} hint={`${r.replies} SMS replies recorded`} />
         <Stat label="Call connect rate" value={pct(r.callConnectRate)} />
         <Stat label="Meetings from calls" value={r.meetings} />
         <Stat label="Opt-outs" value={r.optOuts} />

@@ -18,9 +18,13 @@ test.describe.serial("iPhone-assisted SMS & calling, voice sandbox", () => {
       await expect(card.getByRole("status")).toHaveText("Saved");
     }
     await page.getByLabel("Test number for dummy leads (e.g. your second phone)").fill("082 999 0000");
+    await page.getByLabel("SMS rate estimate (R / segment)").fill("0.50"); // decimals must be accepted
+    await page.getByLabel("Call rate estimate (R / min)").fill("0.99");
     await page.getByRole("button", { name: "Save line settings" }).click();
-    await expect(page.getByText("Saved").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save line settings" }).locator("xpath=..").getByRole("status")).toHaveText("Saved");
     await page.reload();
+    await expect(page.getByLabel("Test number for dummy leads (e.g. your second phone)")).toHaveValue("+27829990000");
+    await expect(page.getByLabel("Call rate estimate (R / min)")).toHaveValue("0.99");
     await expect(page.getByTestId("provider-iphone_manual_sms")).toContainText("enabled");
   });
 

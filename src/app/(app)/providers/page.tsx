@@ -45,8 +45,8 @@ export default async function ProvidersPage() {
                   <Field label="This line's number (optional)" name="ownNumberE164" defaultValue={line.ownNumberE164 ?? ""} placeholder="+27…" />
                   <Field label="Test number for dummy leads (e.g. your second phone)" name="testNumberE164" defaultValue={line.testNumberE164 ?? ""} placeholder="+27…" />
                   <div className="grid grid-cols-2 gap-2">
-                    <Field label="SMS rate estimate (R / segment)" name="smsRate" type="number" defaultValue={line.smsRateCents != null ? String(line.smsRateCents / 100) : ""} />
-                    <Field label="Call rate estimate (R / min)" name="callRate" type="number" defaultValue={line.callRatePerMinCents != null ? String(line.callRatePerMinCents / 100) : ""} />
+                    <Field label="SMS rate estimate (R / segment)" name="smsRate" type="number" step="0.01" min="0" defaultValue={line.smsRateCents != null ? String(line.smsRateCents / 100) : ""} />
+                    <Field label="Call rate estimate (R / min)" name="callRate" type="number" step="0.01" min="0" defaultValue={line.callRatePerMinCents != null ? String(line.callRatePerMinCents / 100) : ""} />
                   </div>
                   <p className="text-xs text-slate-500">Take rates from your Telkom prepaid plan. Spend is only ever an estimate.</p>
                 </ActionForm>
@@ -61,7 +61,7 @@ export default async function ProvidersPage() {
                     <option value="adjustment">Adjustment (negative = spend)</option>
                   </select>
                 </div>
-                <Field label="Amount (R)" name="amountRand" type="number" required />
+                <Field label="Amount (R)" name="amountRand" type="number" step="0.01" required />
                 <Field label="Note" name="note" />
               </ActionForm>
             </div>

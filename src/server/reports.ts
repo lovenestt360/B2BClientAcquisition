@@ -3,8 +3,8 @@ import type { Db } from "@/lib/db";
 export async function outreachReport(db: Db, sinceDays = 30) {
   const since = new Date(Date.now() - sinceDays * 86_400_000);
   const [draftsByStatus, deliveryStates, callsByOutcome, callsByMode, replies, optOuts, airtime, emailOut, emailIn] = await Promise.all([
-    db.messageDraft.groupBy({ by: ["status"], where: { createdAt: { gte: since } }, _count: { _all: true } }),
-    db.messageDraft.groupBy({ by: ["providerKey", "deliveryState"], where: { createdAt: { gte: since } }, _count: { _all: true } }),
+    db.messageDraft.groupBy({ by: ["status"], where: { channel: "SMS", createdAt: { gte: since } }, _count: { _all: true } }),
+    db.messageDraft.groupBy({ by: ["providerKey", "deliveryState"], where: { channel: "SMS", createdAt: { gte: since } }, _count: { _all: true } }),
     db.call.groupBy({ by: ["outcome"], where: { createdAt: { gte: since }, mode: "MANUAL", outcome: { not: null } }, _count: { _all: true }, _sum: { durationSec: true } }),
     db.call.groupBy({ by: ["mode", "providerKey"], where: { createdAt: { gte: since } }, _count: { _all: true } }),
     db.smsEvent.count({ where: { occurredAt: { gte: since }, direction: "inbound" } }),

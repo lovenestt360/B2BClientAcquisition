@@ -84,6 +84,15 @@ describe("local AI voice sandbox", () => {
     expect(ok).toMatchObject({ voiceOwnerConsent: true, ttsVoiceRef: "me.wav" });
   });
 
+  it("starting a new session closes the user's abandoned one", async () => {
+    const { actor } = await setupOutreach();
+    const agent = await db.voiceAgentConfig.create({ data: { name: "T", persona: "p", instructions: "i", disclosureText: "I am an AI." } });
+    const first = await startSandbox(db, { voiceAgentId: agent.id }, actor, deps);
+    await startSandbox(db, { voiceAgentId: agent.id }, actor, deps);
+    expect(await db.call.findUniqueOrThrow({ where: { id: first.callId } })).toMatchObject({ status: "COMPLETED", notes: "sandbox ended: abandoned" });
+    expect(await db.call.count({ where: { providerKey: "local_ai_sandbox", status: "IN_PROGRESS" } })).toBe(1);
+  });
+
   it("emergency hang-up ends the call immediately", async () => {
     const { actor } = await setupOutreach();
     const agent = await db.voiceAgentConfig.create({ data: { name: "T", persona: "p", instructions: "i", disclosureText: "I am an AI." } });

@@ -1,5 +1,6 @@
 import type { Db } from "@/lib/db";
 import { audit } from "./audit";
+import { stripQuoted } from "./email/parse";
 
 export interface InboxItem {
   kind: "email" | "sms";
@@ -42,7 +43,7 @@ export async function listInbox(db: Db, opts: { status?: "open" | "all"; label?:
       contact: e.contact,
       from: e.fromAddress,
       subject: e.subject,
-      preview: e.bodyText.replace(/\s+/g, " ").slice(0, 160),
+      preview: (stripQuoted(e.bodyText) || e.bodyText).replace(/\s+/g, " ").slice(0, 160),
       label: e.classification,
       evidence: "synced from mailbox",
       occurredAt: e.occurredAt,

@@ -98,6 +98,12 @@ export async function startSandbox(db: Db, p: { voiceAgentId: string; contactId?
   if (err) throw new AppError(err);
   const llm = deps.llm ?? getLlm();
   const engine = await engineFor(db, agent, llm);
+  // Close this user's earlier sessions that were left open (tab closed / navigated away).
+  const stale = await db.call.findMany({ where: { providerKey: "local_ai_sandbox", status: "IN_PROGRESS", createdById: actor.id }, select: { id: true } });
+  for (const s of stale) {
+    await db.call.update({ where: { id: s.id }, data: { status: "COMPLETED", endedAt: new Date(), outcome: "OTHER", notes: "sandbox ended: abandoned" } });
+    await db.callEvent.create({ data: { callId: s.id, type: "abandoned", evidence: "sandbox" } });
+  }
   const call = await db.call.create({
     data: {
       providerKey: "local_ai_sandbox",
