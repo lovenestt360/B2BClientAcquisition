@@ -33,13 +33,19 @@ const PEOPLE: [string, string, string, number, PipelineStage][] = [
 async function main() {
   const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe!2026";
+  // On a public deployment, never create accounts with the documented default password.
+  const publicDeploy = !!process.env.VERCEL || process.env.NODE_ENV === "production";
+  if (publicDeploy && (!process.env.SEED_ADMIN_PASSWORD || adminPassword === "ChangeMe!2026" || adminPassword.length < 12)) {
+    throw new Error("Set SEED_ADMIN_PASSWORD (12+ characters, not the default) before deploying. Refusing to seed a public site with a known password.");
+  }
   const users = [
     { email: adminEmail, name: "Admin", role: "ADMIN" as const, password: adminPassword },
     { email: "manager@example.com", name: "Morgan Manager", role: "MANAGER" as const, password: adminPassword },
     { email: "operator@example.com", name: "Olu Operator", role: "OPERATOR" as const, password: adminPassword },
     { email: "viewer@example.com", name: "Val Viewer", role: "VIEWER" as const, password: adminPassword },
   ];
-  for (const u of users) {
+  const seededUsers = publicDeploy ? users.slice(0, 1) : users;
+  for (const u of seededUsers) {
     await prisma.user.upsert({
       where: { email: u.email },
       update: {},
@@ -102,7 +108,7 @@ async function main() {
     await seedSimulatedMailbox(prisma, true);
     if (dummies[4]) await prisma.contact.update({ where: { id: dummies[4].id }, data: { isExistingCustomer: true } });
   }
-  console.log(`Seeded ${users.length} users, ${COMPANIES.length} companies, ${PEOPLE.length} simulated contacts.`);
+  console.log(`Seeded ${seededUsers.length} user(s), ${COMPANIES.length} companies, ${PEOPLE.length} simulated contacts.`);
   console.log(`Sign in as ${adminEmail} (password from SEED_ADMIN_PASSWORD).`);
 }
 

@@ -86,7 +86,7 @@ npm run typecheck
 - [Email: Hostinger setup, delivery evidence, inbox sync](docs/EMAIL.md)
 - [Voice: engine, sandbox, future SIP](docs/VOICE.md)
 - [Testing, including the manual iPhone checklist](docs/TESTING.md)
-- [Deployment](docs/DEPLOYMENT.md)
+- [Deployment](docs/DEPLOYMENT.md) · [Vercel](docs/VERCEL.md)
 - [CLAUDE.md](CLAUDE.md): project rules for development with Claude Code
 
 ## Things this platform will not do

@@ -17,7 +17,9 @@
     "test:integration": "vitest run --project integration",
     "test:e2e": "playwright test",
     "laptop": "tsx scripts/laptop.ts",
-    "laptop:dev": "tsx scripts/laptop.ts --dev"
+    "laptop:dev": "tsx scripts/laptop.ts --dev",
+    "vercel-build": "prisma generate && DATABASE_URL=\"${DATABASE_URL_UNPOOLED:-$DATABASE_URL}\" prisma migrate deploy && DATABASE_URL=\"${DATABASE_URL_UNPOOLED:-$DATABASE_URL}\" tsx prisma/seed.ts && next build",
+    "postinstall": "prisma generate"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
