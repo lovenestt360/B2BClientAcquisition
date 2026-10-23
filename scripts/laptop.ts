@@ -7,7 +7,7 @@
  *  4. builds when the code changed, then serves on all interfaces so the iPhone can connect
  *  5. prints the Wi-Fi address and a QR code to scan with the iPhone camera
  */
-import { execSync, spawn } from "node:child_process";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import net from "node:net";
@@ -65,6 +65,38 @@ async function ensureDatabase() {
   throw new Error("PostgreSQL did not start in time");
 }
 
+/**
+ * Live call assist on the laptop: start the faster-whisper service from its venv when the app is
+ * set to use it, and check that Ollama is up. Neither is required: without them the script
+ * falls back to typed input and rule-based lines.
+ */
+async function ensureVoice(): Promise<ChildProcess | null> {
+  let stt: ChildProcess | null = null;
+  if (process.env.STT_PROVIDER === "http") {
+    const url = new URL(process.env.STT_URL ?? "http://localhost:8001");
+    const port = Number(url.port || 80);
+    const local = ["localhost", "127.0.0.1"].includes(url.hostname);
+    const py = process.platform === "win32" ? "voice-services/stt/.venv/Scripts/python.exe" : "voice-services/stt/.venv/bin/python";
+    if (await canConnect(url.hostname, port)) log(`Speech recognition already running at ${url.origin}`);
+    else if (local && existsSync(py)) {
+      log("Starting speech recognition (faster-whisper)");
+      stt = spawn(py, ["-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", String(port)], {
+        cwd: "voice-services/stt",
+        stdio: "ignore",
+        env: { ...process.env, WHISPER_MODEL: process.env.WHISPER_MODEL ?? "base", WHISPER_LANGUAGE: process.env.WHISPER_LANGUAGE ?? "en" },
+      });
+      for (let i = 0; i < 60 && !(await canConnect(url.hostname, port)); i++) await new Promise((r) => setTimeout(r, 1000));
+      if (!(await canConnect(url.hostname, port))) console.warn("  ! Speech recognition did not start; live assist will take typed input only.");
+    } else console.warn(`  ! Speech recognition not reachable at ${url.origin}. See docs/VOICE.md (Laptop setup).`);
+  }
+  if (process.env.LLM_PROVIDER === "ollama") {
+    const url = new URL(process.env.OLLAMA_URL ?? "http://localhost:11434");
+    if (await canConnect(url.hostname, Number(url.port || 80))) log(`Ollama running (${process.env.OLLAMA_MODEL})`);
+    else console.warn("  ! Ollama is not running: open the Ollama app. Until then suggestions use the rule-based script.");
+  }
+  return stt;
+}
+
 function needsBuild(): boolean {
   if (!existsSync(".next/BUILD_ID")) return true;
   try {
@@ -86,6 +118,7 @@ async function main() {
   run("npx prisma migrate deploy");
   log("Seeding (safe to repeat)");
   run("npx tsx prisma/seed.ts");
+  const stt = await ensureVoice();
 
   if (!dev && needsBuild()) {
     log("Building the app (first run or code changed)");
@@ -105,13 +138,20 @@ async function main() {
   } else {
     console.log("  No Wi-Fi address found: connect the laptop to Wi-Fi to use the iPhone.");
   }
-  console.log("  Keep the laptop awake while you work from the phone. Ctrl+C to stop.\n");
+  console.log("  Keep the laptop awake while you work from the phone. Ctrl+C to stop.");
+  console.log(`  Live call assist: open it on the laptop at http://localhost:${PORT} (browsers only allow the microphone on localhost or HTTPS).\n`);
 
   const child = spawn("npx", ["next", dev ? "dev" : "start", "-H", "0.0.0.0", "-p", String(PORT)], { stdio: "inherit", shell: process.platform === "win32" });
-  const stop = () => child.kill("SIGINT");
+  const stop = () => {
+    stt?.kill();
+    child.kill("SIGINT");
+  };
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
-  child.on("exit", (code) => process.exit(code ?? 0));
+  child.on("exit", (code) => {
+    stt?.kill();
+    process.exit(code ?? 0);
+  });
 }
 
 main().catch((e) => {

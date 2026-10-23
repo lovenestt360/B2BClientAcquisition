@@ -29,9 +29,11 @@ async def transcribe(file: UploadFile = File(...)):
     data = await file.read()
     if not data or len(data) > MAX_BYTES:
         raise HTTPException(400, "audio must be 1 byte to 10 MB")
-    with tempfile.NamedTemporaryFile(suffix=".audio") as tmp:
+    # delete=False + manual unlink: Windows can't reopen a NamedTemporaryFile while it is open.
+    tmp = tempfile.NamedTemporaryFile(suffix=".audio", delete=False)
+    try:
         tmp.write(data)
-        tmp.flush()
+        tmp.close()
         segments, info = model.transcribe(
             tmp.name,
             language=LANGUAGE,
@@ -40,4 +42,6 @@ async def transcribe(file: UploadFile = File(...)):
             condition_on_previous_text=False,
         )
         text = " ".join(s.text.strip() for s in segments).strip()
+    finally:
+        os.unlink(tmp.name)
     return {"text": text, "language": info.language, "duration": info.duration}

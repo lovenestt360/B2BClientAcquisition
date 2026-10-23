@@ -33,9 +33,13 @@ const PEOPLE: [string, string, string, number, PipelineStage][] = [
 async function main() {
   const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe!2026";
-  // On a public deployment, never create accounts with the documented default password.
-  const publicDeploy = !!process.env.VERCEL || process.env.NODE_ENV === "production";
-  if (publicDeploy && (!process.env.SEED_ADMIN_PASSWORD || adminPassword === "ChangeMe!2026" || adminPassword.length < 12)) {
+  const simulation = process.env.SIMULATION_MODE !== "false";
+  // A public deployment, or a laptop pointed at a hosted database (shared with production),
+  // must never get accounts with the documented default password or the demo team.
+  const localDb = /@(localhost|127\.0\.0\.1|db)(:\d+)?\//.test(process.env.DATABASE_URL ?? "");
+  const publicDeploy = !!process.env.VERCEL || process.env.NODE_ENV === "production" || !localDb;
+  const adminExists = !!(await prisma.user.findUnique({ where: { email: adminEmail } }));
+  if (publicDeploy && !adminExists && (!process.env.SEED_ADMIN_PASSWORD || adminPassword === "ChangeMe!2026" || adminPassword.length < 12)) {
     throw new Error("Set SEED_ADMIN_PASSWORD (12+ characters, not the default) before deploying. Refusing to seed a public site with a known password.");
   }
   const users = [
@@ -44,7 +48,7 @@ async function main() {
     { email: "operator@example.com", name: "Olu Operator", role: "OPERATOR" as const, password: adminPassword },
     { email: "viewer@example.com", name: "Val Viewer", role: "VIEWER" as const, password: adminPassword },
   ];
-  const seededUsers = publicDeploy ? users.slice(0, 1) : users;
+  const seededUsers = publicDeploy || !simulation ? users.slice(0, 1) : users;
   for (const u of seededUsers) {
     await prisma.user.upsert({
       where: { email: u.email },
@@ -53,8 +57,9 @@ async function main() {
     });
   }
 
+  // Dummy companies and leads exist only for simulation mode.
   const companyIds: string[] = [];
-  for (const c of COMPANIES) {
+  for (const c of simulation ? COMPANIES : []) {
     const row = await prisma.company.upsert({
       where: { domain: c.domain },
       update: {},
@@ -63,7 +68,7 @@ async function main() {
     companyIds.push(row.id);
   }
 
-  for (const [i, [first, last, title, ci, stage]] of PEOPLE.entries()) {
+  for (const [i, [first, last, title, ci, stage]] of (simulation ? PEOPLE : []).entries()) {
     const email = `${first}.${last}`.toLowerCase().replace(/\s+/g, "") + `@${COMPANIES[ci].domain}`;
     // Valid-format SA mobile numbers in the 082 000 0xxx block; flagged simulated, never dialled.
     const e164 = `+2782000${String(1000 + i).padStart(4, "0")}`;
@@ -126,7 +131,7 @@ async function main() {
     }
     if (dummies[4]) await prisma.contact.update({ where: { id: dummies[4].id }, data: { isExistingCustomer: true } });
   }
-  console.log(`Seeded ${seededUsers.length} user(s), ${COMPANIES.length} companies, ${PEOPLE.length} simulated contacts.`);
+  console.log(`Seeded ${seededUsers.length} user(s), ${companyIds.length} companies, ${simulation ? PEOPLE.length : 0} simulated contacts.`);
   console.log(`Sign in as ${adminEmail} (password from SEED_ADMIN_PASSWORD).`);
 }
 
