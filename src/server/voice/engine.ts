@@ -97,11 +97,11 @@ export function validateDisclosure(text: string): string | null {
   return AI_DISCLOSURE_RE.test(text) ? null : 'Disclosure must state that the caller is an AI (include "AI" or "artificial intelligence")';
 }
 
-const OPT_OUT_RE = /\b(do ?n[o']?t (call|contact|phone)|stop (calling|contacting)|remove (me|my (number|details))|take me off|unsubscribe|never call)\b/i;
+export const OPT_OUT_RE =/\b(do ?n[o']?t (call|contact|phone)|stop (calling|contacting)|remove (me|my (number|details))|take me off|unsubscribe|never call)\b/i;
 const HUMAN_RE = /\b((speak|talk) (to|with) (a |an )?(real )?(human|person|someone|manager|agent)|real person)\b/i;
 const AI_QUESTION_RE = /\b(are you|is this|am i talking to) (a |an )?(robot|bot|ai|machine|computer|real person|human|recording)\b/i;
 const BYE_RE = /^\s*(ok(ay)?[, ]+)?(bye|goodbye|cheers|thanks,? bye)\b/i;
-const BACKCHANNEL_RE = /^\s*(mm+[- ]?hmm+|mm+|mhm+|uh[- ]?huh|hmm+|ah+|uh+|um+)[.!?]?\s*$/i;
+export const BACKCHANNEL_RE =/^\s*(mm+[- ]?hmm+|mm+|mhm+|uh[- ]?huh|hmm+|ah+|uh+|um+)[.!?]?\s*$/i;
 const CLAIMS_HUMAN_RE = /\b(i am|i'm) (a )?(real )?(human|person|not an? (ai|bot|robot))\b/i;
 
 export function initialState(now = Date.now()): EngineState {

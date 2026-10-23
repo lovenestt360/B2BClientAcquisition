@@ -13,11 +13,15 @@
 | Honour opt-outs / pre-emptive blocks | CPA s11 | Suppression list (email / E.164 / domain, per channel or all); STOP replies and verbal opt-outs auto-suppress |
 | Contact hours: weekdays 08:00–20:00, Saturdays 09:00–13:00, never Sundays or public holidays | CPA Reg 4 | Checked at hand-off and dial time (not at drafting); SA public holidays computed incl. Easter and the Sunday→Monday rule |
 | Live human calls aren't s69 "electronic communication" | POPIA s69 | `VOICE_MANUAL` needs no consent in ZA, but opt-outs and contact hours still apply |
+| Transcribing a call you take part in: tell the lead first | RICA s4 (party to the call), POPIA s18 (openness) | Live assist refuses audio until you confirm you read the notice; a refusal turns transcription off for that call |
 
 ## Other or unknown countries
 
 Strict opt-in: every marketing channel, including human calls, needs a recorded `GRANTED`
 permission. Contacts with no country get strict rules plus a warning.
+
+Live call assist applies the all-party rule: nothing is transcribed until you confirm the lead
+**agreed** to the transcription notice.
 
 ## Controls
 
@@ -36,4 +40,8 @@ permission. Contacts with no country get strict rules plus a warning.
   numbers, emails or links are discarded.
 - Phone numbers carry `source`, optional `sourceUrl` and `verifiedAt`; research facts require a source URL.
 - The Telkom line record stores no SIM provisioning secrets.
-- Voice sandbox audio isn't stored; transcripts are.
+- Voice sandbox and live call assist audio isn't stored; transcripts are. The platform never taps
+  iPhone cellular audio: live assist hears the laptop microphone (iPhone on speaker) or the browser
+  softphone's own WebRTC call.
+- Softphone SIP credentials live only in the environment and are handed to signed-in operators'
+  browsers when they dial; use a dedicated, outbound-only extension.

@@ -17,7 +17,7 @@ export async function generateCallGuidance(
   const complianceNotes = [
     "Identify yourself and your company at the start of the call.",
     "If they ask not to be contacted again, apologise, confirm, and record 'Opt-out requested'.",
-    "Do not record the call. The platform cannot access iPhone call audio.",
+    "Calls are never recorded. Live assist transcribes only after you tell the lead (outside ZA, after they agree); it hears your laptop mic or the browser softphone, never the iPhone itself.",
     "South Africa (CPA Reg 4): weekdays 08:00–20:00, Saturdays 09:00–13:00, never Sundays or public holidays.",
   ];
   const system = [

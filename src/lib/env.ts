@@ -23,6 +23,11 @@ const schema = z.object({
   TTS_PROVIDER: z.enum(["mock", "http"]).default("mock"),
   TTS_URL: z.string().default("http://localhost:8002"),
   ASTERISK_ARI_URL: z.string().optional(),
+  // Browser softphone (business SIP/VoIP account with WebRTC). All three are required to enable it.
+  SIP_WSS_URL: z.string().optional(), // wss://pbx.example.com:8089/ws
+  SIP_URI: z.string().optional(), // sip:extension@domain
+  SIP_PASSWORD: z.string().optional(),
+  SIP_DISPLAY_NAME: z.string().optional(),
 });
 
 export type Env = z.infer<typeof schema>;

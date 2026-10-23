@@ -24,7 +24,9 @@ function bestNumber(phones: { e164: string; type: string; isPrimary: boolean }[]
 
 /** Add a contact to the manual call queue with AI talking points. */
 export async function queueManualCall(db: Db, p: { contactId: string; campaignId?: string }, actor: Actor, llm: LlmClient = getLlm()) {
-  const { provider } = await getProvider<VoiceProvider>(db, "iphone_manual_call");
+  // iPhone when enabled, otherwise the browser softphone (live assist works with either).
+  const iphone = await db.providerConfig.findUnique({ where: { key: "iphone_manual_call" } });
+  const { provider } = await getProvider<VoiceProvider>(db, iphone?.enabled ? "iphone_manual_call" : "sip_softphone");
   const contact = await db.contact.findUniqueOrThrow({ where: { id: p.contactId }, include: { company: true, phoneNumbers: true } });
   const to = bestNumber(contact.phoneNumbers);
   if (!to) throw new AppError("Contact has no phone number");
@@ -35,7 +37,7 @@ export async function queueManualCall(db: Db, p: { contactId: string; campaignId
   if (!elig.eligible) throw new ComplianceBlockedError(elig.reasons);
 
   const day = new Date().toISOString().slice(0, 10);
-  const idempotencyKey = `call:iphone_manual_call:${contact.id}:${p.campaignId ?? "-"}:${day}`;
+  const idempotencyKey = `call:${provider.key}:${contact.id}:${p.campaignId ?? "-"}:${day}`;
   const existing = await db.call.findUnique({ where: { idempotencyKey } });
   if (existing) return existing;
 
@@ -54,7 +56,7 @@ export async function queueManualCall(db: Db, p: { contactId: string; campaignId
     data: {
       contactId: contact.id,
       campaignId: p.campaignId,
-      providerKey: "iphone_manual_call",
+      providerKey: provider.key,
       mode: "MANUAL",
       toE164: to,
       status: "QUEUED",

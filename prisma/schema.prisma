@@ -672,7 +672,8 @@ model Call {
   outcome       CallOutcome?
   notes         String?
   guidance      Json? // AI talking points shown to the caller
-  engineState   Json? // voice conversation engine snapshot (sandbox / SIP)
+  engineState   Json? // voice conversation engine snapshot (sandbox / SIP) or live-assist state (manual calls)
+  summary       Json? // post-call summary from live assist: pain points, project hints, meeting prep
   durationSec   Int? // user-entered for manual calls
   costCents     Int?
   voiceAgentId  String?

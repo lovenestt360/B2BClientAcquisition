@@ -1,14 +1,64 @@
 # Voice
 
-Three voice providers share one `VoiceProvider` interface:
+Four voice providers share one `VoiceProvider` interface:
 
 | Provider | What it is | Status |
 |---|---|---|
 | `iphone_manual_call` | You dial from the iPhone Phone app via a `tel:` link. The platform shows the lead profile and AI talking points, then records the outcome you enter. | Disabled until an admin enables it |
+| `sip_softphone` | You call from the browser over a business SIP/VoIP account (WebRTC/WSS, JsSIP). A human places every call. | Disabled until an admin enables it and `SIP_WSS_URL`, `SIP_URI`, `SIP_PASSWORD` are set |
 | `local_ai_sandbox` | The AI agent talks to you in your browser. No telephone network. | Enabled in simulation mode |
 | `asterisk_sip_ai` | Future autonomous calling over an authorised business SIP trunk. | Disabled and gated |
 
 **The platform never has access to native iPhone cellular call audio, and never records calls.**
+Live call assist (below) only transcribes what the laptop microphone or the browser softphone hears,
+after you have told the lead, and discards the audio.
+
+## Live call assist (you call, the AI writes your script)
+
+Open a queued call and choose **Call with live assist** (`/calls/<id>/live`,
+`src/server/voice/assist.ts`, script logic in `assist-script.ts`).
+
+| Mode | How the AI hears the call | Who said what |
+|---|---|---|
+| iPhone on speaker | Laptop mic picks up you and the speakerphone | Approximate: a line that echoes your suggested script is "you"; hold **Space** while you speak to force it |
+| Browser softphone | Your mic and the lead's audio are separate WebRTC streams | Exact |
+
+Flow (stages and transitions in `states.ts` → `ASSIST_TRANSITIONS`):
+
+```
+opener ("who I am, why you, got two minutes?")
+  ├─ yes/other → discovery: up to 2 questions, the lead's answers become pain points
+  │                → pitch: mirror the pain point, sell the outcome
+  │                → meeting_ask: "<len>-minute <format> where you walk me through the project,
+  │                   and I come back with a technical and financial proposal. <A> or <B>?"
+  │                → slot chosen → you press Book → booked (tentative meeting)
+  ├─ busy → callback        ├─ no → one playbook objection answer + meeting ask (2 max) → closed_no
+  └─ opt-out phrase (any stage) → opt_out (final)
+```
+
+- **Before listening:** you read the notice ("I use a note-taking tool that transcribes this call…").
+  ZA leads: confirming you told them is enough. Elsewhere: the lead must agree. Audio posted before
+  that is rejected without being transcribed. Typed notes always work.
+- **Rules decide, the model words.** Stage, opt-outs, price answers (your pricing line only) and
+  which slot was agreed are deterministic. Ollama only rewords the lead-in of the next line and
+  extracts pain points; output containing numbers, links or contact details is dropped.
+  `LLM_PROVIDER=mock` runs purely on the rules.
+- **After the call:** *End call & summarise* writes pain points, project details mentioned and a
+  checklist of what to collect in the meeting (technical: scope, systems, users, timeline, success
+  criteria; financial: budget, cost of the problem, decision makers, procurement, payment
+  structure). It is saved on the call and appended to the booked meeting's notes. You then save
+  the outcome as usual (preselected from where the script ended).
+- Speech segments use the same energy VAD as the sandbox and are posted to faster-whisper
+  (`STT_PROVIDER=http`). Expect 1–3 s from end of sentence to new suggestion on a local GPU.
+
+### Softphone setup
+
+1. A business SIP/VoIP account or PBX extension with WebRTC over WSS (e.g. Asterisk `res_pjsip`
+   with `webrtc=yes`, or a provider that offers WSS). Never a consumer SIM in a gateway.
+2. Create a **dedicated outbound-only extension**: its password is handed to the browser.
+3. Set `SIP_WSS_URL=wss://pbx.example.com:8089/ws`, `SIP_URI=sip:201@pbx.example.com`,
+   `SIP_PASSWORD=…` (optional `SIP_DISPLAY_NAME`), then enable *Browser softphone* on Providers.
+4. Use a headset. Dummy leads are never dialled.
 
 ## AI sales caller
 

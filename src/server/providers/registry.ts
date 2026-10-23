@@ -4,6 +4,7 @@ import { audit } from "../audit";
 import { AppError } from "../errors";
 import { TelkomPrepaidIPhoneAdapter } from "./telkom-iphone";
 import { LocalAiSandboxAdapter, SimulatedSmsAdapter } from "./simulated";
+import { SipSoftphoneAdapter } from "./softphone";
 import { AndroidSmsGatewayAdapter, AsteriskSipAiAdapter, BusinessSmsApiAdapter, EmailSequenceAdapter } from "./future";
 import { automationBlockers } from "./gate";
 import type { MessagingProvider, ProviderRuntimeConfig, VoiceProvider } from "./types";
@@ -20,6 +21,7 @@ interface Definition {
 export const DEFINITIONS: Definition[] = [
   { key: "iphone_manual_sms", kind: "SMS", adapter: "TelkomPrepaidIPhoneAdapter", displayName: "iPhone Messages (Telkom prepaid)", mode: "MANUAL", line: "telkom_prepaid_iphone" },
   { key: "iphone_manual_call", kind: "VOICE", adapter: "TelkomPrepaidIPhoneAdapter", displayName: "iPhone Phone app (Telkom prepaid)", mode: "MANUAL", line: "telkom_prepaid_iphone" },
+  { key: "sip_softphone", kind: "VOICE", adapter: "SipSoftphoneAdapter", displayName: "Browser softphone (business SIP/VoIP)", mode: "MANUAL" },
   { key: "simulated_sms", kind: "SMS", adapter: "SimulatedSmsAdapter", displayName: "Simulated SMS (dummy leads only)", mode: "SIMULATED" },
   { key: "local_ai_sandbox", kind: "VOICE", adapter: "LocalAiSandboxAdapter", displayName: "Local AI voice sandbox", mode: "SIMULATED" },
   { key: "business_sms_api", kind: "SMS", adapter: "BusinessSmsApiAdapter", displayName: "Business SMS API (future)", mode: "AUTOMATED" },
@@ -44,6 +46,8 @@ export function instantiate(c: ProviderConfig): MessagingProvider | VoiceProvide
   switch (c.adapter) {
     case "TelkomPrepaidIPhoneAdapter":
       return new TelkomPrepaidIPhoneAdapter(c.key as "iphone_manual_sms" | "iphone_manual_call");
+    case "SipSoftphoneAdapter":
+      return new SipSoftphoneAdapter();
     case "SimulatedSmsAdapter":
       return new SimulatedSmsAdapter();
     case "LocalAiSandboxAdapter":

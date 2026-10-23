@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { ModeBadge, PageHeader, fmtDate } from "@/components/ui";
+import { summaryAsNotes, type CallSummary } from "@/server/voice/assist-script";
 
 export default async function CallDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -21,14 +22,21 @@ export default async function CallDetail({ params }: { params: Promise<{ id: str
           <dt className="text-slate-500">Est. cost</dt><dd className="col-span-2">{call.costCents != null ? `R${(call.costCents / 100).toFixed(2)} (estimate)` : "—"}</dd>
           <dt className="text-slate-500">Notes</dt><dd className="col-span-2 whitespace-pre-wrap">{call.notes ?? "—"}</dd>
         </dl>
-        {call.mode === "MANUAL" && <p className="mt-2 text-xs text-slate-500">Manual iPhone call: no audio or transcript is available to the platform.</p>}
+        {call.mode === "MANUAL" && call.transcripts.length === 0 && <p className="mt-2 text-xs text-slate-500">Manual call without live assist: no transcript was taken.</p>}
+        {call.mode === "MANUAL" && call.transcripts.length > 0 && <p className="mt-2 text-xs text-slate-500">Transcript from live assist (laptop microphone or browser softphone), taken after the lead was told. No audio was stored.</p>}
       </section>
+      {call.summary != null && (
+        <section className="card space-y-1 text-sm" aria-label="Meeting prep">
+          <h2 className="font-semibold">Meeting prep</h2>
+          <pre className="whitespace-pre-wrap font-sans">{summaryAsNotes(call.summary as unknown as CallSummary)}</pre>
+        </section>
+      )}
       {call.transcripts.length > 0 && (
         <section className="card space-y-2" aria-label="Transcript">
           <h2 className="font-semibold">Transcript</h2>
           {call.transcripts.map((t) => (
             <p key={t.id} className={`text-sm ${t.speaker === "system" ? "text-xs italic text-slate-500" : ""}`}>
-              <strong className="capitalize">{t.speaker === "agent" ? "AI agent" : t.speaker}:</strong> {t.text}
+              <strong className="capitalize">{t.speaker === "agent" ? "AI agent" : t.speaker === "caller" ? "You" : t.speaker}:</strong> {t.text}
               {t.interrupted && <span className="badge ml-1 bg-amber-100 text-amber-800">interrupted</span>}
             </p>
           ))}

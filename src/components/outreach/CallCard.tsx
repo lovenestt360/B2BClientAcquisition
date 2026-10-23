@@ -37,7 +37,10 @@ export function CallCard({ call }: { call: QueuedCall }) {
         </div>
         <div className="flex items-center gap-1"><StageBadge stage={c.stage} /><StatusBadge status={call.status} /></div>
       </header>
-      <DialButton callId={call.id} label={call.status === "DIALING" ? "Dial again" : `Call ${c.firstName}`} />
+      <div className="flex flex-wrap items-start gap-2">
+        <Link className="btn-primary" href={`/calls/${call.id}/live`}>🎧 Call with live assist</Link>
+        {call.providerKey === "iphone_manual_call" && <DialButton callId={call.id} label={call.status === "DIALING" ? "Dial again (no assist)" : `Call ${c.firstName} (no assist)`} />}
+      </div>
       {g && (
         <details className="rounded-lg bg-slate-50 p-3 text-sm" open>
           <summary className="cursor-pointer font-medium">Talking points <span className="text-xs text-slate-500">({g.generatedBy})</span></summary>

@@ -30,6 +30,7 @@
     "bcryptjs": "^3.0.3",
     "exceljs": "^4.4.0",
     "imapflow": "^1.7.8",
+    "jssip": "^3.10.1",
     "libphonenumber-js": "^1.13.15",
     "mailparser": "^3.11.0",
     "next": "^15.5.28",

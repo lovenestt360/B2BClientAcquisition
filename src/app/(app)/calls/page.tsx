@@ -7,7 +7,8 @@ import { CallCard } from "@/components/outreach/CallCard";
 
 
 export default async function CallsPage() {
-  const provider = await prisma.providerConfig.findUnique({ where: { key: "iphone_manual_call" } });
+  const providers = await prisma.providerConfig.findMany({ where: { key: { in: ["iphone_manual_call", "sip_softphone"] }, enabled: true } });
+  const provider = providers[0] ?? null;
   const queue = await prisma.call.findMany({
     where: { mode: "MANUAL", status: { in: ["QUEUED", "DIALING"] } },
     include: { contact: { include: { company: true, phoneNumbers: true } } },
@@ -28,12 +29,12 @@ export default async function CallsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Calls" subtitle="You dial from your iPhone. The platform shows guidance and records the outcome you report.">
+      <PageHeader title="Calls" subtitle="You make the calls (iPhone or browser softphone). Live assist listens, once you tell the lead, and writes your next line.">
         <ModeBadge mode="MANUAL" />
         <Link className="btn-secondary" href="/voice">AI voice sandbox</Link>
       </PageHeader>
       {!provider?.enabled && (
-        <Empty>Manual iPhone calling is disabled. An admin can enable it on the <Link className="underline" href="/providers">Providers</Link> page.</Empty>
+        <Empty>Manual calling is disabled (iPhone and softphone). An admin can enable it on the <Link className="underline" href="/providers">Providers</Link> page.</Empty>
       )}
       {provider?.enabled && (
         <section className="card max-w-xl">

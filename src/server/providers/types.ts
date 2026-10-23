@@ -28,6 +28,7 @@ export type SmsHandoff =
 export type CallHandoff =
   | { kind: "native_dialer"; url: string }
   | { kind: "sandbox" }
+  | { kind: "softphone"; target: string }
   | { kind: "originated"; providerCallId: string };
 
 export interface MessagingProvider {
