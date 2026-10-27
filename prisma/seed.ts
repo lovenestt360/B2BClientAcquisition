@@ -39,7 +39,11 @@ async function main() {
   // must never get accounts with the documented default password or the demo team.
   const localDb = /@(localhost|127\.0\.0\.1|db)(:\d+)?\//.test(process.env.DATABASE_URL ?? "");
   const publicDeploy = !!process.env.VERCEL || process.env.NODE_ENV === "production" || !localDb;
-  const adminExists = !!(await prisma.user.findUnique({ where: { email: adminEmail } }));
+  // A production admin may change their sign-in email in the application. Detect the
+  // role rather than the original seed address so a later deploy never recreates a
+  // second administrator under the old email.
+  const existingAdmin = await prisma.user.findFirst({ where: { role: "ADMIN", active: true }, select: { email: true } });
+  const adminExists = !!existingAdmin;
   if (publicDeploy && !adminExists && (!process.env.SEED_ADMIN_PASSWORD || adminPassword === "ChangeMe!2026" || adminPassword.length < 12)) {
     throw new Error("Set SEED_ADMIN_PASSWORD (12+ characters, not the default) before deploying. Refusing to seed a public site with a known password.");
   }
@@ -49,7 +53,7 @@ async function main() {
     { email: "operator@example.com", name: "Olu Operator", role: "OPERATOR" as const, password: adminPassword },
     { email: "viewer@example.com", name: "Val Viewer", role: "VIEWER" as const, password: adminPassword },
   ];
-  const seededUsers = publicDeploy || !simulation ? users.slice(0, 1) : users;
+  const seededUsers = publicDeploy && adminExists ? [] : publicDeploy || !simulation ? users.slice(0, 1) : users;
   for (const u of seededUsers) {
     await prisma.user.upsert({
       where: { email: u.email },
@@ -139,7 +143,7 @@ async function main() {
     if (dummies[4]) await prisma.contact.update({ where: { id: dummies[4].id }, data: { isExistingCustomer: true } });
   }
   console.log(`Seeded ${seededUsers.length} user(s), ${companyIds.length} companies, ${simulation ? PEOPLE.length : 0} simulated contacts.`);
-  console.log(`Sign in as ${adminEmail} (password from SEED_ADMIN_PASSWORD).`);
+  console.log(`Sign in as ${existingAdmin?.email ?? adminEmail} (password managed by the administrator).`);
 }
 
 main()
