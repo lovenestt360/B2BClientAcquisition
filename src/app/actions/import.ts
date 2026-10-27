@@ -36,3 +36,10 @@ export async function cancelImportAction(form: FormData) {
   await cancelImport(prisma, batchId, user.id);
   revalidatePath(`/import/${batchId}`);
 }
+
+export async function researchImportAction(form: FormData) {
+  const user = await requirePermission("import.run");
+  const batchId = String(form.get("batchId"));
+  await enqueue(prisma, "import.enrich", { batchId, userId: user.id }, `import.enrich:${batchId}:${Date.now()}`).catch(() => undefined);
+  revalidatePath(`/import/${batchId}`);
+}

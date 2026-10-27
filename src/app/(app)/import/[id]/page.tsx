@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { PageHeader, Stat } from "@/components/ui";
-import { cancelImportAction, commitImportAction } from "@/app/actions/import";
+import Link from "next/link";
+import { cancelImportAction, commitImportAction, researchImportAction } from "@/app/actions/import";
+import { evaluateQualification } from "@/server/crm/qualification";
 
 const ACTION_STYLE: Record<string, string> = {
   CREATE: "bg-green-100 text-green-800",
@@ -21,6 +23,9 @@ export default async function ImportBatchPage({ params, searchParams }: { params
     take: 500,
   });
   const counts = await prisma.importRow.groupBy({ by: ["action"], where: { batchId: id }, _count: { _all: true } });
+  const contactIds = [...new Set(rows.flatMap((row) => row.matchContactId ? [row.matchContactId] : []))];
+  const contacts = batch.status === "COMMITTED" ? await prisma.contact.findMany({ where: { id: { in: contactIds } }, include: { phoneNumbers: { select: { source: true } }, company: true } }) : [];
+  const research = contacts.map((contact) => ({ contact, readiness: evaluateQualification(contact) }));
   const n = (a: string) => counts.find((c) => c.action === a)?._count._all ?? 0;
 
   return (
@@ -41,9 +46,18 @@ export default async function ImportBatchPage({ params, searchParams }: { params
         <Stat label="Invalid" value={n("INVALID")} />
       </div>
       {batch.status === "COMMITTED" && (
-        <p className="rounded bg-green-50 p-2 text-sm text-green-800" role="status">
-          Committed: {batch.createdRows} created, {batch.mergedRows} merged.
-        </p>
+        <div className="card space-y-3" role="status">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><p className="font-semibold text-green-800">Committed: {batch.createdRows} created, {batch.mergedRows} merged.</p><p className="text-sm text-slate-600">Automatic public-website research ran after the import. Unverified values were not guessed.</p></div>
+            <form action={researchImportAction}><input type="hidden" name="batchId" value={id} /><button className="btn-secondary">Research missing data again</button></form>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+            <Stat label="Imported contacts" value={research.length} />
+            <Stat label="Ready to qualify" value={research.filter((item) => item.readiness.ready).length} />
+            <Stat label="Need more research" value={research.filter((item) => !item.readiness.ready).length} />
+          </div>
+          {research.filter((item) => !item.readiness.ready).map(({ contact, readiness }) => <div key={contact.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-sm"><span><strong>{contact.firstName} {contact.lastName}</strong> — missing: {readiness.checks.filter((check) => !check.passed).map((check) => check.label.toLowerCase()).join(", ")}</span><Link className="text-brand-700" href={`/contacts/${contact.id}`}>Review contact</Link></div>)}
+        </div>
       )}
       <div className="flex flex-wrap gap-2 text-sm">
         {["", "CREATE", "MERGE", "SKIP_DUPLICATE", "INVALID"].map((f) => (

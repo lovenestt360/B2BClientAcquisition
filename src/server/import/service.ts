@@ -95,7 +95,8 @@ export async function commitImport(db: Db, batchId: string, userId: string | nul
     for (const ir of rows) {
       const n = ir.normalized as unknown as NormalizedRow;
       const result = await db.$transaction((tx) => upsertContactFromRow(tx as Db, n, source));
-      if (result === "created") created++;
+      await db.importRow.update({ where: { id: ir.id }, data: { matchContactId: result.contactId } });
+      if (result.outcome === "created") created++;
       else merged++;
     }
 
@@ -158,7 +159,7 @@ async function resolveCompany(tx: Db, n: NormalizedRow, source: string): Promise
   return company.id;
 }
 
-export async function upsertContactFromRow(tx: Db, n: NormalizedRow, source: string): Promise<"created" | "merged"> {
+export async function upsertContactFromRow(tx: Db, n: NormalizedRow, source: string): Promise<{ outcome: "created" | "merged"; contactId: string }> {
   const companyId = await resolveCompany(tx, n, source);
 
   let contact =
@@ -218,7 +219,7 @@ export async function upsertContactFromRow(tx: Db, n: NormalizedRow, source: str
       },
     });
   }
-  return outcome;
+  return { outcome, contactId: contact.id };
 }
 
 export async function cancelImport(db: Db, batchId: string, userId: string) {

@@ -5,11 +5,17 @@ import { sendEmailDraft } from "../email/send";
 import { syncAllAccounts } from "../email/sync";
 import { runOutreachBatch } from "../outreach/sequence";
 import { runStopWatch } from "../outreach/stops";
+import { enrichImportBatch } from "../research/import-enrichment";
 
 export const handlers = {
   "import.commit": async (db: Db, p: { batchId: string; userId: string | null }) => {
     const b = await commitImport(db, p.batchId, p.userId);
-    return { created: b.createdRows, merged: b.mergedRows };
+    const research = await enrichImportBatch(db, p.batchId, p.userId);
+    return { created: b.createdRows, merged: b.mergedRows, researched: research.length, unresolved: research.filter((r) => r.unresolved.length).length };
+  },
+  "import.enrich": async (db: Db, p: { batchId: string; userId: string | null }) => {
+    const research = await enrichImportBatch(db, p.batchId, p.userId);
+    return { researched: research.length, unresolved: research.filter((r) => r.unresolved.length).length };
   },
   // Drafts are idempotent per contact/purpose/day, so a retried job never duplicates them.
   "sms.generate_drafts": async (
