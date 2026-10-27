@@ -4,7 +4,9 @@ import { freeSlots, availabilitySchema } from "@/server/sales/availability";
 import type { LeadBrief } from "@/server/sales/brief";
 import { playbookSchema } from "@/server/sales/playbook";
 import {
+  applyRefinement,
   applyUtterance,
+  refineWithModel,
   buildCallSummary,
   canTranscribe,
   consentRuleFor,
@@ -44,25 +46,25 @@ describe("live call assist script", () => {
 
   it("runs opener → pain point discovery → outcome pitch → meeting ask → agreed slot", async () => {
     const s = fresh();
-    await applyUtterance(s, ctx, "lead", "Sure, go ahead", llm);
+    applyUtterance(s, ctx, "lead", "Sure, go ahead");
     expect(s.stage).toBe("discovery");
     expect(s.suggestion.say).toMatch(/How do you handle dispatch today\?/);
 
-    await applyUtterance(s, ctx, "lead", "Mostly on spreadsheets and WhatsApp, it's chaos every morning", llm);
+    applyUtterance(s, ctx, "lead", "Mostly on spreadsheets and WhatsApp, it's chaos every morning");
     expect(s.stage).toBe("discovery");
     expect(s.suggestion.say).toMatch(/What would you improve first\?/);
 
-    await applyUtterance(s, ctx, "lead", "Drivers waiting for paperwork, we lose about an hour a day", llm);
+    applyUtterance(s, ctx, "lead", "Drivers waiting for paperwork, we lose about an hour a day");
     expect(s.stage).toBe("pitch");
     expect(s.painPoints).toEqual(["Mostly on spreadsheets and WhatsApp, it's chaos every morning", "Drivers waiting for paperwork, we lose about an hour a day"]);
-    expect(s.suggestion.say).toMatch(/drivers waiting for paperwork.*cut your dispatch admin in half/i);
+    expect(s.suggestion.say).toMatch(/^You mentioned mostly on spreadsheets and WhatsApp, it's chaos every morning. That's exactly where we help. We'd cut your dispatch admin in half./); // the most descriptive pain point
 
-    await applyUtterance(s, ctx, "lead", "Yes that sounds relevant", llm);
+    applyUtterance(s, ctx, "lead", "Yes that sounds relevant");
     expect(s.stage).toBe("meeting_ask");
     expect(s.suggestion.say).toMatch(/30-minute video call where you walk me through the project.*technical and financial proposal.*Would .* or .* work better for you\?/);
     expect(s.offered).toHaveLength(2);
 
-    await applyUtterance(s, ctx, "lead", "The first one works", llm);
+    applyUtterance(s, ctx, "lead", "The first one works");
     expect(s.agreedSlot).toBe(s.offered[0]);
     expect(s.suggestion.say).toMatch(/project details ready.*timeline and a rough budget range/);
   });
@@ -70,37 +72,37 @@ describe("live call assist script", () => {
   it("your own lines are transcribed but don't move the script", async () => {
     const s = fresh();
     const before = s.suggestion.say;
-    expect(await applyUtterance(s, ctx, "caller", "Sure, go ahead", llm)).toBe(false);
+    expect(applyUtterance(s, ctx, "caller", "Sure, go ahead")).toBe(false);
     expect(s.stage).toBe("opener");
     expect(s.suggestion.say).toBe(before);
   });
 
   it("handles an objection once with the playbook answer, then accepts a second no", async () => {
     const s = fresh();
-    await applyUtterance(s, ctx, "lead", "Not interested, thanks", llm);
+    applyUtterance(s, ctx, "lead", "Not interested, thanks");
     expect(s.stage).toBe("meeting_ask");
     expect(s.suggestion.say).toMatch(/first meeting is short and no-obligation/);
-    await applyUtterance(s, ctx, "lead", "No thanks", llm);
+    applyUtterance(s, ctx, "lead", "No thanks");
     expect(s.stage).toBe("meeting_ask");
-    await applyUtterance(s, ctx, "lead", "No", llm);
+    applyUtterance(s, ctx, "lead", "No");
     expect(s.stage).toBe("closed_no");
     expect(s.objections).toHaveLength(2);
   });
 
   it("busy → callback, price → pricing line only, opt-out → final", async () => {
     const busy = fresh();
-    await applyUtterance(busy, ctx, "lead", "I'm driving, call me later", llm);
+    applyUtterance(busy, ctx, "lead", "I'm driving, call me later");
     expect(busy.stage).toBe("callback");
 
     const price = fresh();
-    await applyUtterance(price, ctx, "lead", "How much does it cost?", llm);
+    applyUtterance(price, ctx, "lead", "How much does it cost?");
     expect(price.suggestion.say).toMatch(/^It depends on scope; we quote after the meeting\./);
 
     const out = fresh();
-    await applyUtterance(out, ctx, "lead", "Please remove me from your list and don't call again", llm);
+    applyUtterance(out, ctx, "lead", "Please remove me from your list and don't call again");
     expect(out.stage).toBe("opt_out");
     expect(out.optOut).toBe(true);
-    expect(await applyUtterance(out, ctx, "lead", "Yes sure", llm)).toBe(false);
+    expect(applyUtterance(out, ctx, "lead", "Yes sure")).toBe(false);
     expect(out.stage).toBe("opt_out");
   });
 
@@ -114,24 +116,39 @@ describe("live call assist script", () => {
       },
     };
     const s = fresh();
-    await applyUtterance(s, ctx, "lead", "Sure, go ahead", sneaky);
+    applyUtterance(s, ctx, "lead", "Sure, go ahead");
+    expect(calls).toHaveLength(0); // the rule line is instant; the model runs separately
+    expect(await refineWithModel(sneaky, ctx, s)).toBeNull();
     expect(calls).toHaveLength(1);
     expect(s.suggestion.generatedBy).toBe("rules:v1");
     expect(s.suggestion.say).not.toMatch(/\+27|https/);
 
     const out = fresh();
-    await applyUtterance(out, ctx, "lead", "Stop calling me", sneaky);
-    expect(calls).toHaveLength(1); // opt-out wording is deterministic
+    applyUtterance(out, ctx, "lead", "Stop calling me");
+    expect(out.refine).toBeUndefined(); // opt-out wording is deterministic, nothing to refine
+    expect(await refineWithModel(sneaky, ctx, out)).toBeNull();
+    expect(calls).toHaveLength(1);
   });
 
-  it("uses the model's wording and pain points when they are clean", async () => {
+  it("applies the model's wording and pain points only while the line is still current", async () => {
     const good: LlmClient = { name: "ollama:test", chat: async () => JSON.stringify({ say: "Got it, mornings sound painful.", painPoints: ["Morning dispatch chaos"] }) };
     const s = fresh();
-    await applyUtterance(s, ctx, "lead", "Sure", good);
-    await applyUtterance(s, ctx, "lead", "Mornings are chaos with dispatch", good);
-    expect(s.suggestion.say).toMatch(/^Got it, mornings sound painful\. What would you improve first\?$/);
+    applyUtterance(s, ctx, "lead", "Sure");
+    applyUtterance(s, ctx, "lead", "Mornings are chaos with dispatch");
+    expect(s.suggestion.say).toMatch(/^That makes sense\. What would you improve first\?$/);
+    const r = await refineWithModel(good, ctx, s);
+    expect(applyRefinement(s, r!, good.name)).toBe(true);
+    expect(s.suggestion.say).toBe("Got it, mornings sound painful. What would you improve first?");
     expect(s.painPoints).toContain("Morning dispatch chaos");
     expect(s.suggestion.generatedBy).toBe("ollama:test");
+
+    // The lead spoke again before the model answered: the late rewording is dropped.
+    const t = fresh();
+    applyUtterance(t, ctx, "lead", "Sure");
+    const late = await refineWithModel(good, ctx, t);
+    applyUtterance(t, ctx, "lead", "We use spreadsheets for everything");
+    expect(applyRefinement(t, late!, good.name)).toBe(false);
+    expect(t.suggestion.generatedBy).toBe("rules:v1");
   });
 
   it("guesses speakerphone speakers: a line that echoes the script is you", () => {

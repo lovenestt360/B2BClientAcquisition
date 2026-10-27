@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { execSync } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { loadConfigFile, loadReferenceExamples } from "@/server/outreach/config";
 import { batchSlot, dayBounds, followUpDue, nextBatchAtOrAfter } from "@/server/outreach/schedule";
 import { composeFromEvidence, rankExposures, systemPrompt, SCOPE_NOT_TEMPLATE, type EvidenceItem, type GenerationInput, type GenerationOutput } from "@/server/outreach/generate";
@@ -9,6 +10,13 @@ import { canMoveMember, canMoveSend } from "@/server/outreach/states";
 const cfg = loadConfigFile();
 const S = cfg.settings;
 const at = (iso: string) => new Date(iso);
+
+function filesUnder(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    return entry.isDirectory() ? filesUnder(path) : [path];
+  });
+}
 
 let n = 0;
 function fact(kind: string, field: string, value: string, extra: Partial<EvidenceItem> = {}): EvidenceItem {
@@ -96,8 +104,11 @@ describe("outreach config is data, not a template", () => {
   });
 
   it("no code path references the deleted UK/EU Airtable tables", () => {
-    const hits = execSync(`grep -rlE "tblUwhxkMX3GmmjYL|tbl8khcFfgtOnw4ed" src config prisma scripts || true`, { encoding: "utf8" }).trim();
-    expect(hits).toBe("");
+    const retiredIds = /tblUwhxkMX3GmmjYL|tbl8khcFfgtOnw4ed/;
+    const hits = ["src", "config", "prisma", "scripts"]
+      .flatMap(filesUnder)
+      .filter((path) => retiredIds.test(readFileSync(path, "utf8")));
+    expect(hits).toEqual([]);
   });
 
   it("send and recipient states follow the transition tables", () => {

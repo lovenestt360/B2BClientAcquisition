@@ -3,6 +3,7 @@
  * Dummy leads use example.* domains and are flagged isSimulated=true; the UI disables
  * real sms:/tel: actions for them so a fictional number can never be texted or dialled.
  */
+import "dotenv/config";
 import { PrismaClient, type PipelineStage } from "@prisma/client";
 import { hashPassword } from "../src/server/auth/password";
 import { normalizeCompanyName, normalizePersonName } from "../src/server/normalize";
@@ -31,7 +32,7 @@ const PEOPLE: [string, string, string, number, PipelineStage][] = [
 ];
 
 async function main() {
-  const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@example.com").toLowerCase();
+  const adminEmail = (process.env.SEED_ADMIN_EMAIL?.trim() || "admin@example.com").toLowerCase();
   const adminPassword = process.env.SEED_ADMIN_PASSWORD ?? "ChangeMe!2026";
   const simulation = process.env.SIMULATION_MODE !== "false";
   // A public deployment, or a laptop pointed at a hosted database (shared with production),
@@ -99,7 +100,7 @@ async function main() {
     await prisma.systemSetting.upsert({
       where: { key: "sender.profile" },
       update: {},
-      create: { key: "sender.profile", value: { businessName: "Demo Co", optOutText: "Reply STOP to opt out" } },
+      create: { key: "sender.profile", value: { businessName: "Klyron Consulting", optOutText: "Reply STOP to opt out" } },
     });
     const dummies = await prisma.contact.findMany({ where: { isSimulated: true }, orderBy: { email: "asc" } });
     for (const c of dummies.slice(0, 4)) {
@@ -111,23 +112,29 @@ async function main() {
       }
     }
     await seedSimulatedMailbox(prisma, true);
-    // Demo playbook so the AI caller can be tried immediately; replace it on the Sales playbook page.
-    if (!(await prisma.systemSetting.findUnique({ where: { key: "sales.playbook" } }))) {
-      await prisma.systemSetting.create({
-        data: {
-          key: "sales.playbook",
-          value: {
-            ownerName: "the team",
-            offer: "DEMO: We help South African operations teams automate admin such as dispatch, scheduling and reporting.",
-            idealCustomer: "SA businesses with 10–200 staff and manual operations admin",
-            valueProps: ["Cut repetitive admin hours in half", "Fewer errors in dispatch and delivery paperwork"],
+    // Klyron playbook so every channel starts from the same construction-sector positioning.
+    const klyronPlaybook = {
+            ownerName: "Mário Quissico",
+            offer: "Klyron Consulting helps South African contractors and project-management teams identify, coordinate and close multidisciplinary BIM and MEP risks before they become site rework, programme delays, variations or client surprises.",
+            idealCustomer: "South African main contractors and project-management consultancies responsible for commercial construction delivery, multidisciplinary coordination and project risk.",
+            valueProps: [
+              "Resolve multidisciplinary model and MEP interfaces before fabrication or installation",
+              "Keep critical coordination issues visible, assigned and moving to closure",
+              "Give project teams consistent, coordinated information for site delivery",
+              "Add independent BIM QA/QC or delivery capacity when internal teams are overloaded",
+            ],
             proofPoints: [],
-            pricingGuidance: "Pricing depends on scope; we'd cover it properly in the meeting.",
-            meetingLengthMin: 20,
+            pricingGuidance: "Pricing depends on project stage, disciplines, model condition and the coordination scope. We confirm it after a technical scoping discussion.",
+            meetingLengthMin: 15,
             meetingFormat: "video call",
-          },
-        },
-      });
+    };
+    const existingPlaybook = await prisma.systemSetting.findUnique({ where: { key: "sales.playbook" } });
+    const existingOffer = (existingPlaybook?.value as { offer?: unknown } | null)?.offer;
+    if (!existingPlaybook) {
+      await prisma.systemSetting.create({ data: { key: "sales.playbook", value: klyronPlaybook } });
+    } else if (typeof existingOffer === "string" && existingOffer.startsWith("DEMO:")) {
+      // Upgrade only the old seeded demo; never overwrite an owner-edited playbook.
+      await prisma.systemSetting.update({ where: { key: "sales.playbook" }, data: { value: klyronPlaybook } });
     }
     if (dummies[4]) await prisma.contact.update({ where: { id: dummies[4].id }, data: { isExistingCustomer: true } });
   }

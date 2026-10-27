@@ -144,6 +144,35 @@ export function LiveCallAssist({
   }, [callId]);
 
   const event = useCallback((e: Record<string, unknown>) => post("", JSON.stringify(e), "application/json"), [post]);
+
+  // Background AI steps run outside the queue so they never hold up the next utterance. A reply is
+  // applied only if it isn't older than what's on screen (suggestion ids only increase).
+  const background = useCallback(async (type: "refine" | "refine_summary") => {
+    try {
+      const res = await fetch(`/api/voice/assist/${callId}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type }) });
+      const data = (await res.json()) as AssistView & { error?: string };
+      if (!res.ok) return;
+      setV((cur) => {
+        if (!cur || data.suggestion.id > cur.suggestion.id) return data;
+        if (data.suggestion.id === cur.suggestion.id && data.transcript.length >= cur.transcript.length) return data;
+        return cur;
+      });
+    } catch {
+      /* the rule-based line stays */
+    }
+  }, [callId]);
+  const refinedFor = useRef(-1);
+  const summaryAsked = useRef(false);
+  useEffect(() => {
+    if (!v?.refinePending || refinedFor.current === v.suggestion.id) return;
+    refinedFor.current = v.suggestion.id;
+    void background("refine");
+  }, [v?.refinePending, v?.suggestion.id, background]);
+  useEffect(() => {
+    if (!v?.summaryPending || summaryAsked.current) return;
+    summaryAsked.current = true;
+    void background("refine_summary");
+  }, [v?.summaryPending, background]);
   const segment = useCallback((blob: Blob, speaker: Speaker) => post(`/audio?speaker=${speaker}`, blob, blob.type || "audio/webm"), [post]);
 
   const start = async () => {
@@ -372,7 +401,7 @@ export function LiveCallAssist({
         <section className="card space-y-2 border-2 border-brand-600" aria-live="polite" data-testid="assist-suggestion">
           <div className="flex items-center justify-between text-xs text-slate-500">
             <span className="font-semibold uppercase tracking-wide text-brand-700">Say next</span>
-            <span>{inflight > 0 ? "listening & thinking…" : v.suggestion.generatedBy}</span>
+            <span>{inflight > 0 ? "transcribing…" : v.refinePending ? "AI is polishing this line…" : v.suggestion.generatedBy.startsWith("rules") ? "script" : "AI-worded"}</span>
           </div>
           <p className="text-xl leading-snug">{v.suggestion.say}</p>
           <p className="text-sm text-slate-600">💡 {v.suggestion.why}</p>
@@ -438,7 +467,10 @@ export function LiveCallAssist({
                 <List title="Project details mentioned" items={v.summary.projectHints} />
                 <List title="Collect in the meeting: technical" items={v.summary.meetingPrep.technical} />
                 <List title="Collect in the meeting: financial" items={v.summary.meetingPrep.financial} />
-                <p className="text-xs text-slate-500">({v.summary.generatedBy}){v.booked ? " · Also saved on the meeting's notes." : ""}</p>
+                <p className="text-xs text-slate-500">
+                  {v.summaryPending ? "AI is reading the transcript to improve this (about a minute on the laptop)… " : `(${v.summary.generatedBy}) `}
+                  {v.booked ? "Also saved on the meeting's notes." : ""}
+                </p>
               </>
             ) : (
               <p className="muted">Summarising…</p>

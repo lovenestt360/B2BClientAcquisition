@@ -34,10 +34,10 @@ describe("CPA Reg 4 contact window (SAST)", () => {
 });
 
 describe("rule packs", () => {
-  it("ZA requires consent for electronic channels but not human calls", () => {
+  it("ZA conservatively requires consent for electronic channels including human calls", () => {
     const za = rulesFor("za");
     expect(za.consentRequired).toEqual(expect.arrayContaining(["SMS", "EMAIL", "VOICE_AUTOMATED"]));
-    expect(za.consentRequired).not.toContain("VOICE_MANUAL");
+    expect(za.consentRequired).toContain("VOICE_MANUAL");
   });
   it("unknown countries are strict opt-in everywhere", () => {
     expect(rulesFor(null).consentRequired).toContain("VOICE_MANUAL");

@@ -101,7 +101,7 @@ export async function seedSimulatedMailbox(db: Db, enabled: boolean) {
     update: {},
     create: {
       label: "Simulated mailbox",
-      fromName: "Demo Co Outreach",
+      fromName: "Klyron Consulting",
       fromAddress: "outreach@demo-co.example",
       username: "outreach@demo-co.example",
       ...HOSTINGER,

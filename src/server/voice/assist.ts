@@ -13,12 +13,17 @@ import { busyMeetings, freeSlots, getAvailability, slotLabel } from "../sales/av
 import { buildLeadBrief, type LeadBrief } from "../sales/brief";
 import { bookFromCall } from "../sales/booking";
 import { now as clockNow } from "../clock";
+import { env } from "@/lib/env";
 import { getStt, type SttClient } from "./speech";
 import { assertAssistTransition, assertCallTransition, type AssistStage } from "./states";
 import {
   DISCLOSURE_LINE,
+  applyRefinement,
   applyUtterance,
   buildCallSummary,
+  refineWithModel,
+  ruleSummary,
+  setSuggestion,
   canTranscribe,
   consentRuleFor,
   guessSpeaker,
@@ -61,6 +66,9 @@ export interface AssistView {
   optOut: boolean;
   finished: boolean;
   summary: CallSummary | null;
+  /** The AI is available to reword the current line / improve the summary: the client should ask. */
+  refinePending: boolean;
+  summaryPending: boolean;
   transcript: { seq: number; speaker: string; text: string }[];
   brief: Pick<LeadBrief, "firstName" | "lastName" | "title" | "company" | "industry" | "angle" | "facts" | "history" | "objections" | "generatedBy">;
   /** Softphone only: the SIP target to dial (null for dummy leads, which are never dialled). */
@@ -80,6 +88,8 @@ async function view(db: Db, callId: string, extra: Partial<AssistView> = {}): Pr
   const meeting = s.bookedMeetingId ? await db.meeting.findUnique({ where: { id: s.bookedMeetingId } }) : null;
   const label = (iso: string) => slotLabel(new Date(iso), ctx.timeZone);
   const b = ctx.brief;
+  const ai = env().LLM_PROVIDER === "ollama";
+  const summary = (call.summary as unknown as CallSummary | null) ?? null;
   return {
     callId,
     status: call.status,
@@ -94,7 +104,9 @@ async function view(db: Db, callId: string, extra: Partial<AssistView> = {}): Pr
     booked: meeting ? { startIso: meeting.startsAt.toISOString(), label: label(meeting.startsAt.toISOString()), status: meeting.status } : null,
     optOut: s.optOut,
     finished: !!s.finishedAt,
-    summary: (call.summary as unknown as CallSummary | null) ?? null,
+    summary,
+    refinePending: ai && !!s.refine && !s.finishedAt,
+    summaryPending: ai && !!s.finishedAt && summary?.generatedBy === "rules:v1" && call.transcripts.some((t) => t.speaker === "lead"),
     transcript: call.transcripts.map((t) => ({ seq: t.seq, speaker: t.speaker, text: t.text })),
     brief: { firstName: b.firstName, lastName: b.lastName, title: b.title, company: b.company, industry: b.industry, angle: b.angle, facts: b.facts, history: b.history, objections: b.objections, generatedBy: b.generatedBy },
     ...extra,
@@ -136,6 +148,8 @@ export async function startAssist(db: Db, callId: string, raw: unknown, actor: A
   const avail = await getAvailability(db);
   const t = clockNow();
   const slots = freeSlots(t, avail, await busyMeetings(db, t), 40).map((d) => d.toISOString());
+  // Load the model now so the first refinement doesn't pay the cold-start cost mid-call.
+  if (!llm.name.startsWith("mock")) void llm.chat([{ role: "user", content: "ok" }], { maxTokens: 1 }).catch(() => undefined);
   const brief = await buildLeadBrief(db, call.contactId, playbook, llm);
   const sender = await getSenderProfile(db);
   const user = await db.user.findUnique({ where: { id: actor.id }, select: { name: true } });
@@ -175,6 +189,9 @@ export const assistEventInput = z.discriminatedUnion("type", [
   z.object({ type: z.literal("stage"), stage: z.enum(["opener", "discovery", "pitch", "meeting_ask", "booked", "callback", "closed_no", "opt_out"]) }),
   z.object({ type: z.literal("book") }),
   z.object({ type: z.literal("finish") }),
+  // Background AI steps; never block the caller and never move the script.
+  z.object({ type: z.literal("refine") }),
+  z.object({ type: z.literal("refine_summary") }),
 ]);
 export type AssistEvent = z.infer<typeof assistEventInput>;
 
@@ -182,6 +199,8 @@ export type AssistEvent = z.infer<typeof assistEventInput>;
 export async function assistEvent(db: Db, callId: string, raw: unknown, actor: Actor, deps: AssistDeps = {}): Promise<AssistView> {
   const ev = assistEventInput.parse(raw);
   const llm = deps.llm ?? getLlm();
+  if (ev.type === "refine") return refineSuggestion(db, callId, llm);
+  if (ev.type === "refine_summary") return refineSummary(db, callId, actor, llm);
   await db.$transaction(
     async (tx) => {
       await tx.$queryRaw`SELECT id FROM calls WHERE id = ${callId} FOR UPDATE`;
@@ -207,13 +226,13 @@ export async function assistEvent(db: Db, callId: string, raw: unknown, actor: A
           if (ev.origin === "speech" && !canTranscribe(s)) throw new AppError("Transcription is off: tell the lead first (and outside South Africa, they must agree)", "consent_required", 403);
           const speaker = ev.speaker === "auto" ? guessSpeaker(ev.text, s) : ev.speaker;
           await tx.callTranscript.create({ data: { callId, seq: s.nextSeq++, speaker, text: ev.text } });
-          await applyUtterance(s, ctx, speaker, ev.text, llm);
+          applyUtterance(s, ctx, speaker, ev.text);
           break;
         }
         case "stage": {
           if (ev.stage === "booked") throw new AppError("Use Book to confirm a meeting time");
           assertAssistTransition(s.stage, ev.stage);
-          s.suggestion = suggestionForStage(s, ctx, ev.stage);
+          setSuggestion(s, suggestionForStage(s, ctx, ev.stage));
           if (ev.stage === "opt_out") s.optOut = true;
           s.stage = ev.stage;
           await tx.callEvent.create({ data: { callId, type: "assist_stage", evidence: "user_attestation", data: { stage: ev.stage } } });
@@ -234,7 +253,7 @@ export async function assistEvent(db: Db, callId: string, raw: unknown, actor: A
             bookedBy: "user",
           });
           s.bookedMeetingId = meeting.id;
-          s.suggestion = suggestionForStage(s, ctx, "booked");
+          setSuggestion(s, suggestionForStage(s, ctx, "booked"));
           s.stage = "booked";
           await audit(tx as Db, { actorId: actor.id, action: "meeting.booked_on_call", entityType: "meeting", entityId: meeting.id, metadata: { callId, status: meeting.status } });
           break;
@@ -242,14 +261,14 @@ export async function assistEvent(db: Db, callId: string, raw: unknown, actor: A
         case "finish": {
           if (s.finishedAt) break;
           s.finishedAt = at;
-          const transcript = await tx.callTranscript.findMany({ where: { callId }, orderBy: { seq: "asc" } });
-          const summary = await buildCallSummary(llm, ctx, s, transcript);
+          s.refine = undefined;
+          const summary = ruleSummary(ctx, s); // instant; the AI version replaces it via refine_summary
           await tx.call.update({ where: { id: callId }, data: { summary: summary as unknown as Prisma.InputJsonValue } });
           if (s.bookedMeetingId) {
             const m = await tx.meeting.findUnique({ where: { id: s.bookedMeetingId } });
             if (m) await tx.meeting.update({ where: { id: m.id }, data: { notes: [m.notes, summaryAsNotes(summary)].filter(Boolean).join("\n\n") } });
           }
-          await tx.callEvent.create({ data: { callId, type: "assist_finished", evidence: "user_attestation", data: { stage: s.stage, summaryBy: summary.generatedBy } } });
+          await tx.callEvent.create({ data: { callId, type: "assist_finished", evidence: "user_attestation", data: { stage: s.stage } } });
           await audit(tx as Db, { actorId: actor.id, action: "call.assist_finish", entityType: "call", entityId: callId, metadata: { stage: s.stage } });
           break;
         }
@@ -258,6 +277,47 @@ export async function assistEvent(db: Db, callId: string, raw: unknown, actor: A
     },
     { timeout: 90_000 },
   );
+  return view(db, callId);
+}
+
+/** Reword the current line with the model, outside the lock; applied only if still current. */
+async function refineSuggestion(db: Db, callId: string, llm: LlmClient): Promise<AssistView> {
+  const call = await db.call.findUniqueOrThrow({ where: { id: callId } });
+  const snap = snapshotOf(call.engineState);
+  if (!snap?.state.refine || snap.state.finishedAt) return view(db, callId);
+  const r = await refineWithModel(llm, snap.ctx, snap.state);
+  await db.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM calls WHERE id = ${callId} FOR UPDATE`;
+    const fresh = snapshotOf((await tx.call.findUniqueOrThrow({ where: { id: callId } })).engineState);
+    if (!fresh?.state.refine || fresh.state.refine.id !== snap.state.refine!.id) return;
+    // A failed or rejected rewording keeps the rule line and stops further attempts for it.
+    if (!r || !applyRefinement(fresh.state, r, llm.name)) fresh.state.refine = undefined;
+    await tx.call.update({ where: { id: callId }, data: { engineState: fresh as unknown as Prisma.InputJsonValue } });
+  });
+  return view(db, callId);
+}
+
+/** Replace the instant post-call summary with the model's, outside the lock (slow on CPU). */
+async function refineSummary(db: Db, callId: string, actor: Actor, llm: LlmClient): Promise<AssistView> {
+  const call = await db.call.findUniqueOrThrow({ where: { id: callId }, include: { transcripts: { orderBy: { seq: "asc" } } } });
+  const snap = snapshotOf(call.engineState);
+  const before = call.summary as unknown as CallSummary | null;
+  if (!snap?.state.finishedAt || before?.generatedBy !== "rules:v1") return view(db, callId);
+  const summary = await buildCallSummary(llm, snap.ctx, snap.state, call.transcripts);
+  if (summary.generatedBy === "rules:v1") {
+    // Model failed: mark it so the client stops asking.
+    await db.call.update({ where: { id: callId }, data: { summary: { ...before, generatedBy: "rules:v1 (AI unavailable)" } as unknown as Prisma.InputJsonValue } });
+    return view(db, callId);
+  }
+  const updated = await db.call.updateMany({
+    where: { id: callId, summary: { path: ["generatedBy"], equals: "rules:v1" } },
+    data: { summary: summary as unknown as Prisma.InputJsonValue },
+  });
+  if (updated.count && snap.state.bookedMeetingId) {
+    const m = await db.meeting.findUnique({ where: { id: snap.state.bookedMeetingId } });
+    if (m?.notes) await db.meeting.update({ where: { id: m.id }, data: { notes: m.notes.replace(summaryAsNotes(before), summaryAsNotes(summary)) } });
+  }
+  if (updated.count) await audit(db, { actorId: actor.id, action: "call.assist_summary_ai", entityType: "call", entityId: callId, metadata: { by: summary.generatedBy } });
   return view(db, callId);
 }
 

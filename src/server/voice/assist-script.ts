@@ -12,6 +12,10 @@
  * Deterministic rules decide the stage, opt-outs and which meeting slot was agreed. The model only
  * rewords the lead-in of the next line and pulls short pain points out of what the lead said.
  * Fixed tails (slot offers, pricing line) are never left to the model.
+ *
+ * Live latency: the rule line is shown immediately. The model's rewording runs afterwards as a
+ * separate "refine" step and only replaces the suggestion if the conversation hasn't moved on
+ * (suggestion ids must match). A slow CPU model therefore never holds up the caller.
  */
 import { z } from "zod";
 import type { LlmClient } from "../ai/llm";
@@ -36,6 +40,7 @@ export interface AssistContext {
 }
 
 export interface Suggestion {
+  id: number; // increases with every new suggestion; a late refinement for an older id is dropped
   say: string;
   why: string;
   alternatives: string[];
@@ -63,6 +68,8 @@ export interface AssistState {
   bookedMeetingId?: string;
   optOut: boolean;
   suggestion: Suggestion;
+  /** Pending model rewording of the current suggestion (only for rewordable rule lines). */
+  refine?: { id: number; stage: AssistStage; lead: string; tail: string; why: string; lastLead: string };
   recent: { speaker: Speaker; text: string }[]; // last turns, model context only
   nextSeq: number;
   finishedAt?: string;
@@ -87,6 +94,14 @@ export function canTranscribe(s: AssistState): boolean {
 
 const lower1 = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
 const noDot = (t: string) => t.trim().replace(/[.!?]+$/, "");
+const FILLER_RE = /^(honestly|well|so|um+|uh+|yeah|yes|look|i mean|basically|like|ja|okay|ok)\b[,\s]*/i;
+/** "Honestly, it's spreadsheets" → "it's spreadsheets" (for mirroring the lead's words back). */
+function stripFillers(t: string) {
+  let out = t.trim();
+  for (let i = 0; i < 4 && FILLER_RE.test(out); i++) out = out.replace(FILLER_RE, "");
+  return out || t.trim();
+}
+const contentWords = (t: string) => new Set((t.toLowerCase().match(/[a-z]{4,}/g) ?? []).map((w) => w.replace(/(ing|ed|es|s)$/, "")));
 
 function slotTail(ctx: AssistContext, offered: string[]) {
   const labels = offered.map((iso) => slotLabel(new Date(iso), ctx.timeZone));
@@ -125,6 +140,7 @@ export function initialAssistState(ctx: AssistContext, source: AssistSource, rul
       why: "Say who you are, why you're calling them specifically, and ask permission to continue.",
       alternatives: [`Hi ${brief.firstName}, ${callerName || "<your name>"} here from ${businessName || "<your company>"}. Did I catch you at a bad time?`],
       generatedBy: "rules:v1",
+      id: 0,
     },
     recent: [],
     nextSeq: 0,
@@ -187,8 +203,8 @@ function objectionOrClose(s: AssistState, ctx: AssistContext, text: string): Rul
   const o = matchObjection(text, brief) ?? brief.objections[0];
   return {
     stage: "meeting_ask",
-    lead: `${o?.response ?? "Completely fair."} That's why I'd suggest ${meetingPurpose(playbook)}.`,
-    tail: offerSlots(s, ctx),
+    lead: o?.response ?? "Completely fair.",
+    tail: `That's why I'd suggest ${meetingPurpose(playbook)}. ${offerSlots(s, ctx)}`,
     why: `Objection${o ? ` ("${o.objection}")` : ""}: acknowledge it, answer once, then make a low-commitment meeting ask.`,
     alternatives: brief.objections.filter((x) => x !== o).slice(0, 2).map((x) => x.response),
     rewordable: true,
@@ -268,13 +284,14 @@ export function ruleStep(s: AssistState, ctx: AssistContext, text: string): Rule
           rewordable: true,
         };
       }
-      const pain = s.painPoints.at(-1);
+      const pain = [...s.painPoints].sort((x, y) => y.length - x.length)[0];
       const vp = playbook.valueProps[0];
       const proof = playbook.proofPoints[0];
       return {
         stage: "pitch",
-        lead: `${pain ? `So the real issue is ${lower1(noDot(pain))}. ` : ""}That's exactly where we help. ${brief.pitch}`,
-        tail: "Does that sound like it could be relevant for you?",
+        // Only the mirror is rewordable; the pitch itself is fixed so the model can't drop the outcome.
+        lead: pain ? `You mentioned ${lower1(noDot(stripFillers(pain)))}.` : "That's really helpful.",
+        tail: `That's exactly where we help. ${brief.pitch} Does that sound like it could be relevant for you?`,
         why: "Mirror their pain point, then sell the outcome (not features). Keep it under 30 seconds.",
         alternatives: [vp ? `In short: we ${lower1(noDot(vp))}.` : "", proof ? `For example, ${lower1(noDot(proof))}.` : ""].filter(Boolean),
         rewordable: true,
@@ -292,11 +309,11 @@ export function ruleStep(s: AssistState, ctx: AssistContext, text: string): Rule
           rewordable: true,
         };
       }
-      addPain(s, t);
+      if (intent === "other") addPain(s, t); // "yes, sounds relevant" is agreement, not a pain point
       return {
         stage: "meeting_ask",
-        lead: `Great. The best next step is ${meetingPurpose(playbook)}.`,
-        tail: offerSlots(s, ctx),
+        lead: "Great.",
+        tail: `The best next step is ${meetingPurpose(playbook)}. ${offerSlots(s, ctx)}`,
         why: "Ask for the meeting with two concrete options: it's easier to pick one than to say yes to 'sometime'.",
         alternatives: [],
         rewordable: true,
@@ -361,12 +378,23 @@ const llmReply = z.object({
   painPoints: z.array(z.string().min(3).max(160)).max(4).default([]),
 });
 
+export type SuggestionDraft = Omit<Suggestion, "id">;
+
+/** Replace the current suggestion; the new id makes any in-flight refinement of the old one stale. */
+export function setSuggestion(s: AssistState, next: SuggestionDraft, refine?: Omit<NonNullable<AssistState["refine"]>, "id">) {
+  const id = s.suggestion.id + 1;
+  s.suggestion = { ...next, id };
+  s.refine = refine ? { ...refine, id } : undefined;
+}
+
 /**
- * Let the model reword the lead-in using the conversation so far. Any failure, invented detail or
- * human-unlike output falls back to the rule text. Never called for fixed lines.
+ * Ask the model to reword the pending suggestion's lead-in. Pure: reads the state, mutates
+ * nothing, so it can run outside the per-call lock. Stable context (rules, playbook, lead) goes
+ * first so the model server can reuse its cached prefix; only the conversation changes per turn.
  */
-export async function rewordWithModel(llm: LlmClient, ctx: AssistContext, s: AssistState, step: RuleStep, lastLead: string): Promise<{ lead: string; pains: string[] } | null> {
-  if (llm.name.startsWith("mock")) return null;
+export async function refineWithModel(llm: LlmClient, ctx: AssistContext, s: AssistState, timeoutMs = 25_000): Promise<{ id: number; lead: string; pains: string[] } | null> {
+  const r = s.refine;
+  if (!r || llm.name.startsWith("mock")) return null;
   try {
     const raw = await llm.chat(
       [
@@ -374,60 +402,73 @@ export async function rewordWithModel(llm: LlmClient, ctx: AssistContext, s: Ass
           role: "system",
           content: [
             "TASK: CALL_ASSIST. You write the NEXT LINE a human salesperson will say on a live B2B phone call.",
-            "Output strict JSON {\"say\": string, \"painPoints\": string[]}.",
+            'Output strict JSON {"say": string, "painPoints": string[]}.',
             "say: 1-2 short spoken sentences that respond to what the lead just said and lead naturally into the FIXED ENDING (do not repeat the ending).",
             "painPoints: up to 3 short phrases naming business problems the lead just described (empty if none).",
             "Use ONLY the playbook and lead data. Never invent facts, numbers, clients, prices, links, emails or phone numbers.",
-            `GOAL OF THIS STEP (${step.stage}): ${step.why}`,
-            `DRAFT LINE: ${step.lead}`,
-            `FIXED ENDING: ${step.tail}`,
             `PLAYBOOK: ${JSON.stringify({ offer: ctx.playbook.offer, valueProps: ctx.playbook.valueProps, proofPoints: ctx.playbook.proofPoints })}`,
             `LEAD: ${JSON.stringify({ name: ctx.brief.firstName, title: ctx.brief.title, company: ctx.brief.company, industry: ctx.brief.industry })}`,
-            `PAIN POINTS SO FAR: ${JSON.stringify(s.painPoints)}`,
-            `CONVERSATION: ${s.recent.map((r) => `${r.speaker === "caller" ? "YOU" : "LEAD"}: ${r.text}`).join(" | ")}`,
           ].join("\n"),
         },
-        { role: "user", content: `The lead just said: "${lastLead.slice(0, 500)}". JSON only.` },
+        {
+          role: "user",
+          content: [
+            `CONVERSATION: ${s.recent.slice(-6).map((t) => `${t.speaker === "caller" ? "YOU" : "LEAD"}: ${t.text}`).join(" | ")}`,
+            `GOAL OF THIS STEP (${r.stage}): ${r.why}`,
+            `DRAFT LINE: ${r.lead}`,
+            `FIXED ENDING: ${r.tail}`,
+            `The lead just said: "${r.lastLead.slice(0, 400)}". JSON only.`,
+          ].join("\n"),
+        },
       ],
-      { temperature: 0.4, maxTokens: 220, signal: AbortSignal.timeout(8000) },
+      { temperature: 0.4, maxTokens: 90, signal: AbortSignal.timeout(timeoutMs) },
     );
-    const r = llmReply.parse(JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)));
-    if (findInventedDetails(r.say).length || /\b(as an ai|language model)\b/i.test(r.say)) return null;
-    return { lead: r.say.trim(), pains: r.painPoints };
+    const out = llmReply.parse(JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)));
+    // Reject invented contact details, AI-speak and template placeholders like "[Company Name]".
+    if (findInventedDetails(out.say).length || /\b(as an ai|language model)\b/i.test(out.say) || /\[[^\]]*\]|<[^>]+>|\{[^}]+\}/.test(out.say)) return null;
+    return { id: r.id, lead: out.say.trim(), pains: out.painPoints };
   } catch {
     return null;
   }
 }
 
-/** Apply one utterance. Returns true when the suggestion changed. */
-export async function applyUtterance(s: AssistState, ctx: AssistContext, speaker: Speaker, text: string, llm: LlmClient): Promise<boolean> {
+/** Apply a refinement if it is still for the current suggestion. Returns true when applied. */
+export function applyRefinement(s: AssistState, r: { id: number; lead: string; pains: string[] }, by: string): boolean {
+  if (!s.refine || s.refine.id !== r.id || s.suggestion.id !== r.id) return false;
+  const lead = /[.!?]$/.test(r.lead) ? r.lead : `${r.lead}.`;
+  s.suggestion = { ...s.suggestion, say: `${lead} ${s.refine.tail}`.trim(), generatedBy: by };
+  // Keep only pain points grounded in what the lead actually said (the model may echo the playbook).
+  const said = contentWords(s.refine.lastLead);
+  for (const p of r.pains) if ([...contentWords(p)].some((w) => said.has(w))) addPain(s, p);
+  s.refine = undefined;
+  return true;
+}
+
+/** Apply one utterance with the rules only (instant). Returns true when the suggestion changed. */
+export function applyUtterance(s: AssistState, ctx: AssistContext, speaker: Speaker, text: string): boolean {
   s.recent = [...s.recent, { speaker, text: text.slice(0, 500) }].slice(-MAX_RECENT);
   if (speaker === "caller") return false; // your own lines don't move the script; the lead's replies do
   const step = ruleStep(s, ctx, text);
   if (!step) return false;
   if (!canAssistTransition(s.stage, step.stage)) return false;
-  let lead = step.lead;
-  let generatedBy = "rules:v1";
-  if (step.rewordable) {
-    const m = await rewordWithModel(llm, ctx, s, step, text);
-    if (m) {
-      lead = m.lead;
-      generatedBy = llm.name;
-      for (const p of m.pains) addPain(s, p);
-    }
-  }
   s.stage = step.stage;
-  s.suggestion = { say: `${lead} ${step.tail}`.trim(), why: step.why, alternatives: step.alternatives, generatedBy };
+  setSuggestion(
+    s,
+    { say: `${step.lead} ${step.tail}`.trim(), why: step.why, alternatives: step.alternatives, generatedBy: "rules:v1" },
+    step.rewordable ? { stage: step.stage, lead: step.lead, tail: step.tail, why: step.why, lastLead: text } : undefined,
+  );
   return true;
 }
 
 /** You jumped stages by hand: give a sensible line for the new stage. */
-export function suggestionForStage(s: AssistState, ctx: AssistContext, stage: AssistStage): Suggestion {
+export function suggestionForStage(s: AssistState, ctx: AssistContext, stage: AssistStage): SuggestionDraft {
   const { brief, playbook } = ctx;
   const g = "rules:v1";
   switch (stage) {
-    case "opener":
-      return initialAssistState(ctx, s.source, s.consent.rule).suggestion;
+    case "opener": {
+      const { id: _id, ...first } = initialAssistState(ctx, s.source, s.consent.rule).suggestion;
+      return first;
+    }
     case "discovery": {
       const q = brief.discoveryQuestions[Math.min(s.discoveryAsked, brief.discoveryQuestions.length - 1)] ?? "How are you handling that today?";
       s.discoveryAsked = Math.max(1, s.discoveryAsked + 1);
@@ -487,7 +528,8 @@ const BASE_FINANCIAL = [
   "Preferred payment structure (once-off, phased, monthly)",
 ];
 
-export async function buildCallSummary(llm: LlmClient, ctx: AssistContext, s: AssistState, transcript: { speaker: string; text: string }[]): Promise<CallSummary> {
+/** Instant summary from what the rules captured; the model version may replace it later. */
+export function ruleSummary(ctx: AssistContext, s: AssistState): CallSummary {
   const nextStep =
     s.stage === "booked" && s.agreedSlot
       ? `Meeting on ${slotLabel(new Date(s.agreedSlot), ctx.timeZone)}: the lead presents the project; you collect the data for the proposal.`
@@ -498,7 +540,7 @@ export async function buildCallSummary(llm: LlmClient, ctx: AssistContext, s: As
           : s.stage === "closed_no"
             ? "No meeting. Leave it, or try again in a few months if it fits."
             : "Follow up to agree a meeting time.";
-  const fallback: CallSummary = {
+  return {
     painPoints: s.painPoints,
     projectHints: [],
     objections: s.objections,
@@ -506,6 +548,11 @@ export async function buildCallSummary(llm: LlmClient, ctx: AssistContext, s: As
     nextStep,
     generatedBy: "rules:v1",
   };
+}
+
+/** Model summary of the transcript (slow on CPU: run it after the call, outside any lock). */
+export async function buildCallSummary(llm: LlmClient, ctx: AssistContext, s: AssistState, transcript: { speaker: string; text: string }[], timeoutMs = 150_000): Promise<CallSummary> {
+  const fallback = ruleSummary(ctx, s);
   const leadLines = transcript.filter((t) => t.speaker === "lead");
   if (llm.name.startsWith("mock") || leadLines.length === 0) return fallback;
   try {
@@ -525,7 +572,7 @@ export async function buildCallSummary(llm: LlmClient, ctx: AssistContext, s: As
         },
         { role: "user", content: "JSON only." },
       ],
-      { temperature: 0.2, maxTokens: 600, signal: AbortSignal.timeout(30_000) },
+      { temperature: 0.2, maxTokens: 400, signal: AbortSignal.timeout(timeoutMs) },
     );
     const r = summaryReply.parse(JSON.parse(raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1)));
     const all = [...r.painPoints, ...r.projectHints, ...r.technical, ...r.financial].join("\n");
@@ -536,7 +583,7 @@ export async function buildCallSummary(llm: LlmClient, ctx: AssistContext, s: As
       projectHints: r.projectHints,
       objections: s.objections,
       meetingPrep: { technical: [...r.technical, ...BASE_TECHNICAL], financial: [...r.financial, ...BASE_FINANCIAL] },
-      nextStep,
+      nextStep: fallback.nextStep,
       generatedBy: llm.name,
     };
   } catch {

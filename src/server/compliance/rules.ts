@@ -11,8 +11,9 @@
  *  - CPA s11 + Reg 4: honour opt-outs/pre-emptive blocks; no direct-marketing contact on
  *    Sundays or public holidays, Saturdays before 09:00 or after 13:00, or other days before
  *    08:00 or after 20:00.
- *  - Live human calls are not "electronic communication" under s69, but CPA opt-outs and
- *    contact hours still apply.
+ *  - The Information Regulator's December 2024 guidance treats telephone calls as electronic
+ *    communication. This conservative rule therefore requires consent or an existing-customer
+ *    basis for live marketing calls too, pending counsel review.
  * Default (all other / unknown countries): strict opt-in for every marketing channel.
  */
 import type { Channel } from "@prisma/client";
@@ -39,7 +40,7 @@ export interface LocalTime {
 
 const ZA: RulePack = {
   country: "ZA",
-  consentRequired: ["EMAIL", "SMS", "VOICE_AUTOMATED"],
+  consentRequired: ["EMAIL", "SMS", "VOICE_AUTOMATED", "VOICE_MANUAL"],
   existingCustomerBasis: true,
   oneConsentRequestAllowed: true,
   contactWindow: (t) => {

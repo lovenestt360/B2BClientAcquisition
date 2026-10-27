@@ -18,7 +18,7 @@ async function setup(over: { country?: string | null; isSimulated?: boolean } = 
   const company = await db.company.create({ data: { name: "Karoo Logistics", normalizedName: "karoo logistics", industry: "Logistics" } });
   const lead = await makeContact(over);
   await db.contact.update({ where: { id: lead.id }, data: { companyId: company.id } });
-  if (over.country && over.country !== "ZA") await grantConsent(lead.id, "VOICE_MANUAL"); // strict opt-in outside ZA
+  if (!over.isSimulated) await grantConsent(lead.id, "VOICE_MANUAL");
   const call = await queueManualCall(db, { contactId: lead.id }, actor, deps.llm);
   return { admin, actor, lead, call };
 }

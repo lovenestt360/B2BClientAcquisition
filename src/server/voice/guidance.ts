@@ -23,6 +23,7 @@ export async function generateCallGuidance(
   const system = [
     "TASK: CALL_GUIDANCE",
     "Produce concise talking points for a human making a B2B phone call. Do not invent facts about the prospect;",
+    "Use a direct peer-to-peer construction tone, acknowledge that the prospect may be on site, and ask permission to continue. If there is site noise or bad timing, stop the pitch and arrange a lawful follow-up.",
     "use only the context given. Return strict JSON with keys opener, talkingPoints[], questions[], objections[{objection,response}], close.",
     `CALLER COMPANY: ${ctx.businessName || "our company"}`,
     `PROSPECT: ${ctx.firstName}, ${ctx.title ?? "unknown title"} at ${ctx.company ?? "unknown company"} (${ctx.industry ?? "unknown industry"})`,
@@ -37,11 +38,11 @@ export async function generateCallGuidance(
     return { ...guidanceSchema.parse(JSON.parse(json)), generatedBy: llm.name, complianceNotes };
   } catch {
     return {
-      opener: `Hi ${ctx.firstName}, this is <your name> from ${ctx.businessName || "<company>"}. Is now a bad time for a 2-minute call?`,
-      talkingPoints: ["Why you are calling, in one sentence", `Relevance to ${ctx.company ?? "their business"}`, "One concrete outcome you have delivered"],
-      questions: ["How are you handling this today?", "What would make a change worth it?"],
+      opener: `Hi ${ctx.firstName}, <your name> here from ${ctx.businessName || "<company>"}. I know you're likely busy on site, so I'll be brief. Is now a bad time for two minutes?`,
+      talkingPoints: ["Confirm their responsibility for BIM, MEP coordination or project delivery", `Tie the reason for calling to verified project context at ${ctx.company ?? "their company"}`, "Discuss preventing coordination issues from becoming rework, variations or programme pressure", "Do not quote savings or project results without recorded proof"],
+      questions: ["How are you handling BIM and MEP coordination on the project today?", "Are you fully resourced internally, or is there pressure you may need to outsource?"],
       objections: [{ objection: "Send me an email", response: "Happy to. What's the one thing you'd want it to cover?" }],
-      close: "Suggest a 20-minute follow-up with two specific time options.",
+      close: "Suggest a 15-minute technical scoping discussion with two specific time options.",
       generatedBy: "template:v1",
       complianceNotes,
     };

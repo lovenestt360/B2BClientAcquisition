@@ -51,6 +51,31 @@ opener ("who I am, why you, got two minutes?")
 - Speech segments use the same energy VAD as the sandbox and are posted to faster-whisper
   (`STT_PROVIDER=http`). Expect 1–3 s from end of sentence to new suggestion on a local GPU.
 
+- **Latency design.** The rule line appears as soon as the speech is transcribed (~1–2 s with
+  faster-whisper `base` on a laptop CPU). The model's rewording runs afterwards as a background
+  `refine` call (5–20 s on CPU) and replaces the line only if the conversation hasn't moved on.
+  Slot offers, the pitch and the meeting purpose are fixed text the model can't drop; AI pain points
+  are kept only when they share words with what the lead said; placeholders like "[Company Name]"
+  are rejected. The post-call summary works the same way (instant checklist, AI version later).
+
+### Laptop setup (Windows, no Docker)
+
+Vercel can't run speech recognition or a model, so listening works when you run the app on the
+laptop (same Neon database as the Vercel site, so data is shared).
+
+1. Speech recognition, once:
+   ```bash
+   cd voice-services/stt && python -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt
+   ```
+2. Ollama: `winget install Ollama.Ollama`, then `ollama pull llama3.2:3b` (3B: fast enough on a
+   4-core laptop CPU; `llama3.1:8b` takes 10–20 s per line there). The app keeps it loaded for 30 min.
+3. `.env`: `DATABASE_URL` (Vercel's `DATABASE_URL_UNPOOLED`), the same `APP_ENCRYPTION_KEY` and
+   `SEED_ADMIN_EMAIL` as Vercel, `LLM_PROVIDER=ollama`, `OLLAMA_MODEL=llama3.2:3b`,
+   `STT_PROVIDER=http`, `WHISPER_MODEL=base`, `WHISPER_LANGUAGE=en`, `SIMULATION_MODE=false`.
+4. `npm run laptop` starts faster-whisper from the venv, checks Ollama, and serves the app. Open
+   live assist at **http://localhost:3000** on the laptop: browsers only allow the microphone on
+   localhost or HTTPS, so the iPhone-over-Wi-Fi address can't listen.
+
 ### Softphone setup
 
 1. A business SIP/VoIP account or PBX extension with WebRTC over WSS (e.g. Asterisk `res_pjsip`

@@ -55,6 +55,8 @@ npm run db:seed                 # admin@example.com / ChangeMe!2026 + dummy lead
 npm run dev                     # http://localhost:3000
 ```
 
+To use hosted PostgreSQL instead of Docker, follow [the Supabase setup](docs/SUPABASE.md).
+
 Seeded users (same password): `admin@`, `manager@`, `operator@`, `viewer@example.com`.
 
 `JOBS_MODE` defaults to `inline` (jobs run in the request) for development. Compose runs a

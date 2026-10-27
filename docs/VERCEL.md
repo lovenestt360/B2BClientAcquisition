@@ -3,7 +3,7 @@
 Vercel runs `npm run vercel-build`, which:
 
 1. generates the Prisma client,
-2. applies migrations (`prisma migrate deploy`, over the unpooled connection when Neon provides one),
+2. applies migrations (`prisma migrate deploy`, over `DIRECT_URL`),
 3. seeds safely: creates **only your admin account** (and, in simulation mode, the dummy leads and
    simulated mailbox). It **fails the build** if `SEED_ADMIN_PASSWORD` is missing, is the default,
    or is shorter than 12 characters,
@@ -14,7 +14,8 @@ Re-deploying is safe: migrations and the seed are idempotent and never overwrite
 ## 1. Database
 
 Vercel → Storage → **Create Database → Neon (Postgres)** and connect it to the project. That adds
-`DATABASE_URL` (pooled) and `DATABASE_URL_UNPOOLED` (used for migrations). Neon has a free tier.
+For this project, use Supabase instead: `DATABASE_URL` is the transaction pooler and `DIRECT_URL`
+is the session pooler used for migrations. See [SUPABASE.md](SUPABASE.md).
 
 ## 2. Environment variables (Project → Settings → Environment Variables)
 

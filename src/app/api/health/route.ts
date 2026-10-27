@@ -25,8 +25,8 @@ export async function GET() {
     const t = await prisma.$queryRaw<{ exists: boolean }[]>`SELECT to_regclass('public.users') IS NOT NULL AS "exists"`;
     status.migrated = !!t[0]?.exists;
     if (status.migrated) status.hasAdmin = (await prisma.user.count({ where: { role: "ADMIN", active: true } })) > 0;
-  } catch {
-    // fall through with what we know
+  } catch (error) {
+    console.error("Health check database error:", error instanceof Error ? error.message : error);
   }
   status.ok = status.database && status.migrated;
   return Response.json(status, { status: status.ok ? 200 : 503 });

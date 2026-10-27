@@ -54,12 +54,12 @@ export function smsSegments(body: string): { encoding: "GSM-7" | "UCS-2"; length
 export async function generateSmsCore(llm: LlmClient, ctx: DraftContext, sender: SenderProfile): Promise<{ core: string; generatedBy: string }> {
   const system = [
     "TASK: SMS_DRAFT",
-    "You write short, polite, factual B2B SMS messages for South Africa.",
+    "You write short, professional B2B SMS messages for South African construction decision-makers.",
     "Rules: max 220 characters; no links, phone numbers or email addresses; no false urgency; no claims you cannot verify;",
     "do NOT include the sender name or opt-out text (added automatically). Output only the message text.",
     ctx.purpose === "consent_request"
       ? "This is a ONE-TIME request for permission to send marketing messages. Ask for consent clearly; do not market a product."
-      : "This is a marketing message to a contact who has a lawful basis on record.",
+      : "This is a marketing message to a contact who has a lawful basis on record. Treat SMS as a concise follow-up, not a full cold pitch. If the campaign context says a call was attempted or completed, mention only that verified context.",
     `SENDER: ${sender.businessName || "our company"}`,
     `FIRST_NAME: ${ctx.firstName}`,
     `TITLE: ${ctx.title ?? "unknown"}`,
@@ -82,7 +82,7 @@ export async function generateSmsCore(llm: LlmClient, ctx: DraftContext, sender:
     core =
       ctx.purpose === "consent_request"
         ? `Hi ${ctx.firstName}, may we occasionally send you SMS updates about services for ${ctx.company ?? "your business"}? Reply YES to agree.`
-        : `Hi ${ctx.firstName}, would a quick 15-min call about improving operations at ${ctx.company ?? "your business"} be useful?`;
+        : `Hi ${ctx.firstName}, would 15 minutes to discuss reducing coordination pressure and site rework at ${ctx.company ?? "your project team"} be useful?`;
     return { core, generatedBy: "template:v1" };
   }
   return { core, generatedBy: llm.name };

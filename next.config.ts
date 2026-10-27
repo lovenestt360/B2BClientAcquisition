@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: process.env.NEXT_OUTPUT === "standalone" ? "standalone" : undefined,
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  outputFileTracingRoot: process.cwd(),
   serverExternalPackages: ["pg-boss", "exceljs"],
   // The outreach config and non-binding reference examples are read at runtime.
   outputFileTracingIncludes: { "/**": ["./config/**/*"] },

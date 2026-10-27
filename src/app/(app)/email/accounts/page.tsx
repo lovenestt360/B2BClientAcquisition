@@ -46,7 +46,7 @@ export default async function MailboxesPage({ searchParams }: { searchParams: Pr
           {editing && <input type="hidden" name="id" value={editing.id} />}
           <div className="grid gap-2 sm:grid-cols-2">
             <Field label="Label" name="label" required defaultValue={v.label} placeholder="Sales mailbox" />
-            <Field label="Sender name" name="fromName" required defaultValue={v.fromName} placeholder="Thabo at Demo Co" />
+            <Field label="Sender name" name="fromName" required defaultValue={v.fromName} placeholder="Mário at Klyron Consulting" />
             <Field label="Email address" name="fromAddress" type="email" required defaultValue={v.fromAddress} />
             <Field label="Username (blank = email address)" name="username" defaultValue={editing?.username ?? ""} />
           </div>

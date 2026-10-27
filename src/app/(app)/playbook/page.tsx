@@ -31,19 +31,19 @@ export default async function PlaybookPage() {
           <Field label="Your name (the AI says it's calling for you, in your voice)" name="ownerName" defaultValue={p.ownerName} placeholder="Mario" />
           <div>
             <label className="label" htmlFor="offer">What you sell (one paragraph)</label>
-            <textarea className="input" id="offer" name="offer" rows={3} defaultValue={p.offer} placeholder="We help logistics companies automate dispatch and delivery admin…" />
+            <textarea className="input" id="offer" name="offer" rows={3} defaultValue={p.offer} placeholder="We help contractors resolve BIM and MEP coordination risks before they become site rework, variations or delays." />
           </div>
           <div>
             <label className="label" htmlFor="idealCustomer">Ideal customer</label>
-            <input className="input" id="idealCustomer" name="idealCustomer" defaultValue={p.idealCustomer} placeholder="SA logistics firms with 10–200 vehicles" />
+            <input className="input" id="idealCustomer" name="idealCustomer" defaultValue={p.idealCustomer} placeholder="South African main contractors and project-management consultancies" />
           </div>
           <div>
             <label className="label" htmlFor="valueProps">Value points (one per line; the pitch is built from these)</label>
-            <textarea className="input" id="valueProps" name="valueProps" rows={4} defaultValue={p.valueProps.join("\n")} placeholder={"Cut dispatch admin in half\nFewer delivery-note errors"} />
+            <textarea className="input" id="valueProps" name="valueProps" rows={4} defaultValue={p.valueProps.join("\n")} placeholder={"Resolve MEP interfaces before fabrication\nKeep critical coordination issues moving to closure"} />
           </div>
           <div>
             <label className="label" htmlFor="proofPoints">Proof points (true results only, one per line)</label>
-            <textarea className="input" id="proofPoints" name="proofPoints" rows={3} defaultValue={p.proofPoints.join("\n")} placeholder="A Gauteng courier saved 12 hours a week" />
+            <textarea className="input" id="proofPoints" name="proofPoints" rows={3} defaultValue={p.proofPoints.join("\n")} placeholder="Add only a verified project result with evidence" />
           </div>
           <Field label="What the AI may say about price" name="pricingGuidance" defaultValue={p.pricingGuidance} />
           <div className="grid grid-cols-2 gap-2">

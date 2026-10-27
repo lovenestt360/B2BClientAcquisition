@@ -52,10 +52,12 @@ describe("checkEligibility (POPIA / CPA)", () => {
     expect((await checkEligibility(db, { contactId: e.id, channel: "SMS" })).eligible).toBe(true);
   });
 
-  it("human calls in ZA respect opt-outs and contact hours but not s69 consent", async () => {
+  it("human calls in ZA require a recorded basis and respect contact hours", async () => {
     await setupOutreach();
     const c = await makeContact();
-    expect(await checkEligibility(db, { contactId: c.id, channel: "VOICE_MANUAL" })).toMatchObject({ eligible: true, basis: "non_electronic" });
+    expect(await checkEligibility(db, { contactId: c.id, channel: "VOICE_MANUAL" })).toMatchObject({ eligible: false, basis: null });
+    await grantConsent(c.id, "VOICE_MANUAL");
+    expect(await checkEligibility(db, { contactId: c.id, channel: "VOICE_MANUAL" })).toMatchObject({ eligible: true, basis: "consent" });
     const sunday = await checkEligibility(db, { contactId: c.id, channel: "VOICE_MANUAL", now: new Date("2026-10-25T09:00:00Z") });
     expect(sunday.reasons).toEqual(["CPA Reg 4: no direct marketing on Sundays"]);
     const drafting = await checkEligibility(db, { contactId: c.id, channel: "VOICE_MANUAL", now: new Date("2026-10-25T09:00:00Z"), ignoreContactWindow: true });

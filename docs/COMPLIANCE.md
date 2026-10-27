@@ -12,7 +12,7 @@
 | Every message identifies the sender and offers an opt-out | POPIA s69(4) | Sender profile required; approval rejects bodies without the business name or "STOP" |
 | Honour opt-outs / pre-emptive blocks | CPA s11 | Suppression list (email / E.164 / domain, per channel or all); STOP replies and verbal opt-outs auto-suppress |
 | Contact hours: weekdays 08:00–20:00, Saturdays 09:00–13:00, never Sundays or public holidays | CPA Reg 4 | Checked at hand-off and dial time (not at drafting); SA public holidays computed incl. Easter and the Sunday→Monday rule |
-| Live human calls aren't s69 "electronic communication" | POPIA s69 | `VOICE_MANUAL` needs no consent in ZA, but opt-outs and contact hours still apply |
+| Telephone calls are treated conservatively as electronic communication | Information Regulator direct-marketing guidance (3 Dec 2024); POPIA s69 | `VOICE_MANUAL` requires consent or an existing-customer basis in ZA, pending counsel review; opt-outs and contact hours also apply |
 | Transcribing a call you take part in: tell the lead first | RICA s4 (party to the call), POPIA s18 (openness) | Live assist refuses audio until you confirm you read the notice; a refusal turns transcription off for that call |
 
 ## Other or unknown countries

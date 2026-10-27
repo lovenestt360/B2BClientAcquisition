@@ -27,6 +27,7 @@ export class OllamaClient implements LlmClient {
         model: this.model,
         messages,
         stream: false,
+        keep_alive: "30m", // stay loaded between calls; a cold load costs ~10 s on a laptop CPU
         options: { temperature: opts.temperature ?? 0.4, num_predict: opts.maxTokens ?? 300 },
       }),
       signal: opts.signal ?? AbortSignal.timeout(60_000),

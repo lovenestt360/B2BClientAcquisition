@@ -1,5 +1,6 @@
 node_modules
 .next
+.devlogs/
 .env
 .env.local
 coverage
@@ -14,4 +15,5 @@ uploads/
 voice-services/tts/voices/*
 !voice-services/tts/voices/README.md
 .next-vercel
+supabase/.temp/
 voice-services/**/.venv

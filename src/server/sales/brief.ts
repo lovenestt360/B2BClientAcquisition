@@ -58,22 +58,22 @@ export async function collectLeadFacts(db: Db, contactId: string) {
 
 function templateBrief(base: Omit<LeadBrief, "angle" | "opener" | "pitch" | "discoveryQuestions" | "objections" | "generatedBy">, p: Playbook) {
   const who = base.company ?? "your team";
-  const vp = p.valueProps[0] ?? "save time on operations";
+  const vp = p.valueProps[0] ?? "resolve coordination risks before they reach site";
   const proof = p.proofPoints[0] ? ` For example, ${p.proofPoints[0].replace(/\.$/, "")}.` : "";
   return {
     angle: `${base.title ?? "Decision maker"} at ${who}${base.industry ? ` (${base.industry})` : ""}: lead with "${vp}".`,
-    opener: `I'm calling because we help ${base.industry ? `${base.industry.toLowerCase()} ` : ""}businesses like ${who} ${vp.charAt(0).toLowerCase()}${vp.slice(1).replace(/\.$/, "")}.`,
+    opener: `I know you're likely busy, so I'll be brief. We help project teams like ${who} ${vp.charAt(0).toLowerCase()}${vp.slice(1).replace(/\.$/, "")}.`,
     pitch: `Based on what you've said, the quickest win for ${who} would be to ${vp.charAt(0).toLowerCase()}${vp.slice(1).replace(/\.$/, "")}.${proof} The best next step is a short ${p.meetingLengthMin}-minute ${p.meetingFormat} to see if it fits.`,
     discoveryQuestions: [
-      `How are you handling that at ${who} at the moment?`,
-      "What would you most like to improve in the next few months?",
-      "Who else would usually be involved in a decision like this?",
+      `How are you handling BIM and MEP coordination at ${who} at the moment?`,
+      "Where is the greatest coordination pressure: design closure, fabrication information or site interfaces?",
+      "Is the work fully resourced internally, or do you sometimes bring in specialist coordination support?",
     ],
     objections: [
-      { objection: "not interested", response: "Completely fair. Most people say that before seeing what's possible, which is why the first meeting is short and no-obligation." },
-      { objection: "send me an email", response: "Happy to, and a quick call is usually faster to see whether it's even relevant for you." },
-      { objection: "no budget", response: "Understood. The first conversation is just to see whether the numbers make sense; there's no commitment." },
-      { objection: "already have a supplier", response: "That's good to hear. Many of our clients did too; the meeting is a quick comparison so you know your options." },
+      { objection: "not interested", response: "Understood. I won't push it. Before I go, is coordination fully covered internally for your current work?" },
+      { objection: "send me an email", response: "Happy to. What project or coordination pressure would make the email most useful to you?" },
+      { objection: "no budget", response: "Understood. The short discussion is only to establish whether an external coordination scope could prevent a larger delivery exposure; there is no commitment." },
+      { objection: "already have a supplier", response: "That makes sense. We can also support a defined package, independent QA/QC or temporary capacity without replacing the existing team." },
     ],
   };
 }
