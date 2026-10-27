@@ -18,6 +18,8 @@ const schema = z.object({
   LLM_PROVIDER: z.enum(["mock", "ollama"]).default("mock"),
   OLLAMA_URL: z.string().default("http://localhost:11434"),
   OLLAMA_MODEL: z.string().default("llama3.1:8b"),
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_RESEARCH_MODEL: z.string().default("gemini-2.5-flash"),
   STT_PROVIDER: z.enum(["mock", "http"]).default("mock"),
   STT_URL: z.string().default("http://localhost:8001"),
   TTS_PROVIDER: z.enum(["mock", "http"]).default("mock"),

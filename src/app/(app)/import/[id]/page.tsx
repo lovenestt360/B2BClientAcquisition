@@ -48,7 +48,7 @@ export default async function ImportBatchPage({ params, searchParams }: { params
       {batch.status === "COMMITTED" && (
         <div className="card space-y-3" role="status">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div><p className="font-semibold text-green-800">Committed: {batch.createdRows} created, {batch.mergedRows} merged.</p><p className="text-sm text-slate-600">Automatic public-website research ran after the import. Unverified values were not guessed.</p></div>
+            <div><p className="font-semibold text-green-800">Committed: {batch.createdRows} created, {batch.mergedRows} merged.</p><p className="text-sm text-slate-600">Gemini research with Google Search grounding ran after the import. Uncited or unverified values were not saved.</p></div>
             <form action={researchImportAction}><input type="hidden" name="batchId" value={id} /><button className="btn-secondary">Research missing data again</button></form>
           </div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-3">

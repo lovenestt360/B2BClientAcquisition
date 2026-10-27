@@ -1,85 +1,96 @@
-import { isIP } from "node:net";
-import { lookup } from "node:dns/promises";
+import { z } from "zod";
 import type { Db } from "@/lib/db";
 import { audit } from "../audit";
+import { normalizeEmail } from "../normalize";
 import { normalizeCountry } from "../import/validate";
+import { parsePhone } from "../phone";
 
-export interface WebsiteEvidence {
-  description: string | null;
-  industry: string | null;
-  country: string | null;
-  city: string | null;
+const fieldSchema = z.enum(["title", "email", "phone", "country", "company.description", "company.industry", "company.country", "company.city"]);
+const outputSchema = z.object({
+  claims: z.array(z.object({ field: fieldSchema, value: z.string().min(1), confidence: z.number().min(0).max(1) })).max(12),
+});
+
+type ResearchField = z.infer<typeof fieldSchema>;
+export interface GroundedClaim { field: ResearchField; value: string; confidence: number; sourceUrl: string }
+
+interface GeminiResponse {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string }> };
+    groundingMetadata?: {
+      groundingChunks?: Array<{ web?: { uri?: string; title?: string } }>;
+      groundingSupports?: Array<{ segment?: { startIndex?: number; endIndex?: number; text?: string }; groundingChunkIndices?: number[] }>;
+    };
+  }>;
+  error?: { message?: string };
 }
 
-const text = (value: unknown) => (typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "");
-const tag = (html: string, pattern: RegExp) => text(pattern.exec(html)?.[1]?.replace(/<[^>]*>/g, " ")) || null;
+const clean = (value: string) => value.replace(/\s+/g, " ").trim();
 
-/** Extract only explicit public-page metadata. Nothing here guesses a person or contact channel. */
-export function extractWebsiteEvidence(html: string): WebsiteEvidence {
-  const evidence: WebsiteEvidence = {
-    description:
-      tag(html, /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["'][^>]*>/i) ??
-      tag(html, /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["'][^>]*>/i),
-    industry: null,
-    country: null,
-    city: null,
-  };
-  for (const match of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
-    try {
-      const parsed = JSON.parse(match[1]);
-      const candidates = Array.isArray(parsed) ? parsed : parsed?.["@graph"] ?? [parsed];
-      for (const item of candidates) {
-        if (!item || typeof item !== "object") continue;
-        evidence.industry ||= text(item.industry) || null;
-        const address = Array.isArray(item.address) ? item.address[0] : item.address;
-        if (address && typeof address === "object") {
-          const rawCountry = typeof address.addressCountry === "object" ? address.addressCountry?.name : address.addressCountry;
-          evidence.country ||= normalizeCountry(text(rawCountry));
-          evidence.city ||= text(address.addressLocality) || null;
-        }
-        evidence.description ||= text(item.description) || null;
-      }
-    } catch {
-      // Invalid structured data is ignored; it is never treated as evidence.
-    }
-  }
-  return evidence;
-}
+/** Parse Gemini output and retain only claims directly covered by Google Search grounding supports. */
+export function groundedClaims(response: GeminiResponse): GroundedClaim[] {
+  const candidate = response.candidates?.[0];
+  const raw = candidate?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+  const json = raw.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+  const parsed = outputSchema.safeParse(JSON.parse(json || "{}"));
+  if (!parsed.success) return [];
+  const chunks = candidate?.groundingMetadata?.groundingChunks ?? [];
+  const supports = candidate?.groundingMetadata?.groundingSupports ?? [];
 
-function privateAddress(address: string) {
-  if (address === "::1" || address.startsWith("fe80:") || address.startsWith("fc") || address.startsWith("fd")) return true;
-  if (!address.includes(".")) return false;
-  const [a, b] = address.split(".").map(Number);
-  return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
-}
-
-async function safePublicUrl(input: string) {
-  const url = new URL(/^https?:\/\//i.test(input) ? input : `https://${input}`);
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.port) throw new Error("Unsafe website URL");
-  if (url.hostname === "localhost" || isIP(url.hostname) && privateAddress(url.hostname)) throw new Error("Private website URL");
-  const addresses = await lookup(url.hostname, { all: true });
-  if (!addresses.length || addresses.some((entry) => privateAddress(entry.address))) throw new Error("Website resolves to a private address");
-  return url;
-}
-
-async function fetchPublicPage(input: string) {
-  let url = await safePublicUrl(input);
-  for (let redirect = 0; redirect < 3; redirect++) {
-    const response = await fetch(url, {
-      redirect: "manual",
-      signal: AbortSignal.timeout(5_000),
-      headers: { "user-agent": "ClientAcquisitionResearch/1.0 (+public company metadata)" },
+  return parsed.data.claims.flatMap((claim) => {
+    const valueStart = raw.indexOf(claim.value);
+    if (valueStart < 0) return [];
+    const valueEnd = valueStart + claim.value.length;
+    const support = supports.find((item) => {
+      const start = item.segment?.startIndex ?? -1;
+      const end = item.segment?.endIndex ?? -1;
+      return start <= valueStart && end >= valueEnd || start < valueEnd && end > valueStart;
     });
-    if (response.status >= 300 && response.status < 400 && response.headers.get("location")) {
-      url = await safePublicUrl(new URL(response.headers.get("location")!, url).toString());
-      continue;
-    }
-    if (!response.ok) throw new Error(`Website returned ${response.status}`);
-    if (!(response.headers.get("content-type") ?? "").toLowerCase().includes("text/html")) throw new Error("Website did not return HTML");
-    const html = (await response.text()).slice(0, 1_000_000);
-    return { url: url.toString(), evidence: extractWebsiteEvidence(html) };
-  }
-  throw new Error("Too many website redirects");
+    const sourceUrl = support?.groundingChunkIndices
+      ?.map((index) => chunks[index]?.web?.uri)
+      .find((uri): uri is string => !!uri && /^https:\/\//i.test(uri));
+    return sourceUrl ? [{ ...claim, value: clean(claim.value), sourceUrl }] : [];
+  });
+}
+
+function researchPrompt(contact: {
+  firstName: string; lastName: string | null; title: string | null; email: string | null; country: string | null;
+  company: { name: string; domain: string | null; website: string | null; industry: string | null; country: string | null; city: string | null; description: string | null } | null;
+}) {
+  return `Research this exact B2B contact and company using public web sources.
+Person: ${contact.firstName} ${contact.lastName ?? ""}
+Known title: ${contact.title ?? "unknown"}
+Known email: ${contact.email ?? "unknown"}
+Known country: ${contact.country ?? "unknown"}
+Company: ${contact.company?.name ?? "unknown"}
+Company domain: ${contact.company?.domain ?? contact.company?.website ?? "unknown"}
+
+Return JSON only: {"claims":[{"field":"title|email|phone|country|company.description|company.industry|company.country|company.city","value":"...","confidence":0.0}]}
+Rules:
+- Return only missing or corrective facts explicitly stated by a public source.
+- The person must be unambiguously the same person at the same company. If identity is ambiguous, omit person claims.
+- Never construct, infer, or pattern-guess an email or phone number.
+- Do not use LinkedIn pages requiring login or private/personal data brokers.
+- Country values must be an ISO 3166-1 alpha-2 code.
+- Omit every uncertain or unsupported value; an empty claims array is valid.`;
+}
+
+async function geminiResearch(contact: Parameters<typeof researchPrompt>[0]) {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) throw new Error("Gemini research is not configured: add GEMINI_API_KEY to the production environment");
+  const model = process.env.GEMINI_RESEARCH_MODEL?.trim() || "gemini-2.5-flash";
+  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: "POST",
+    signal: AbortSignal.timeout(45_000),
+    headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: researchPrompt(contact) }] }],
+      tools: [{ google_search: {} }],
+      generationConfig: { temperature: 0.1 },
+    }),
+  });
+  const body = await response.json() as GeminiResponse;
+  if (!response.ok) throw new Error(body.error?.message || `Gemini API returned ${response.status}`);
+  return { model, claims: groundedClaims(body) };
 }
 
 const missingLabels = (contact: { title: string | null; country: string | null; email: string | null; phoneNumbers: unknown[]; companyId: string | null }) => [
@@ -92,60 +103,65 @@ const missingLabels = (contact: { title: string | null; country: string | null; 
 export async function enrichImportedContact(db: Db, contactId: string, actorId: string | null) {
   const contact = await db.contact.findUniqueOrThrow({ where: { id: contactId }, include: { company: true, phoneNumbers: true } });
   const before = missingLabels(contact);
-  const website = contact.company?.website || contact.company?.domain;
   const filled: string[] = [];
-  let sourceUrl: string | null = null;
+  const sources = new Set<string>();
+  let model: string | null = null;
   let error: string | null = null;
 
-  if (contact.company && website) {
-    try {
-      const researched = await fetchPublicPage(website);
-      sourceUrl = researched.url;
-      const e = researched.evidence;
-      const data = {
-        description: contact.company.description ?? e.description ?? undefined,
-        industry: contact.company.industry ?? e.industry ?? undefined,
-        country: contact.company.country ?? e.country ?? undefined,
-        city: contact.company.city ?? e.city ?? undefined,
-      };
-      for (const field of ["description", "industry", "country", "city"] as const) {
-        if (!contact.company[field] && data[field]) {
-          filled.push(`company.${field}`);
-          const exists = await db.researchFact.findFirst({ where: { companyId: contact.company.id, field, value: String(data[field]), sourceUrl } });
-          if (!exists) await db.researchFact.create({ data: { companyId: contact.company.id, field, value: String(data[field]), sourceUrl, confidence: 1, verifiedAt: new Date() } });
-        }
-      }
-      await db.company.update({ where: { id: contact.company.id }, data });
-      if (!contact.country && data.country) {
-        await db.contact.update({ where: { id: contact.id }, data: { country: data.country } });
+  if (!contact.company) error = "A company must be linked before Gemini can identify the correct person";
+  else try {
+    const researched = await geminiResearch(contact);
+    model = researched.model;
+    for (const claim of researched.claims) {
+      sources.add(claim.sourceUrl);
+      const verifiedAt = new Date();
+      if (claim.field.startsWith("company.")) {
+        const field = claim.field.slice(8) as "description" | "industry" | "country" | "city";
+        let value: string | null = claim.value;
+        if (field === "country") value = normalizeCountry(value);
+        if (!value || contact.company[field]) continue;
+        await db.company.update({ where: { id: contact.company.id }, data: { [field]: value } });
+        const exists = await db.researchFact.findFirst({ where: { companyId: contact.company.id, field, value, sourceUrl: claim.sourceUrl } });
+        if (!exists) await db.researchFact.create({ data: { companyId: contact.company.id, field, value, sourceUrl: claim.sourceUrl, confidence: claim.confidence, verifiedAt } });
+        filled.push(claim.field);
+      } else if (claim.field === "title" && !contact.title) {
+        await db.contact.update({ where: { id: contact.id }, data: { title: claim.value } });
+        await db.researchFact.create({ data: { contactId: contact.id, kind: "role", field: "title", value: claim.value, sourceUrl: claim.sourceUrl, confidence: claim.confidence, verifiedAt } });
+        filled.push("contact.title");
+      } else if (claim.field === "country" && !contact.country) {
+        const country = normalizeCountry(claim.value);
+        if (!country) continue;
+        await db.contact.update({ where: { id: contact.id }, data: { country } });
+        await db.researchFact.create({ data: { contactId: contact.id, field: "country", value: country, sourceUrl: claim.sourceUrl, confidence: claim.confidence, verifiedAt } });
         filled.push("contact.country");
+      } else if (claim.field === "email" && !contact.email) {
+        const email = normalizeEmail(claim.value);
+        if (!email || await db.contact.findUnique({ where: { email } })) continue;
+        await db.contact.update({ where: { id: contact.id }, data: { email, emailSource: claim.sourceUrl, emailVerifiedAt: verifiedAt, emailVerificationStatus: "Source verified" } });
+        filled.push("contact.email");
+      } else if (claim.field === "phone" && contact.phoneNumbers.length === 0) {
+        const phone = parsePhone(claim.value, contact.country ?? contact.company.country ?? "ZA");
+        if (!phone.valid || !phone.e164) continue;
+        await db.phoneNumber.create({ data: { contactId: contact.id, e164: phone.e164, rawInput: claim.value, country: phone.country, type: phone.type, isPrimary: true, source: claim.sourceUrl, sourceUrl: claim.sourceUrl, verifiedAt } });
+        filled.push("contact.phone");
       }
-    } catch (cause) {
-      error = cause instanceof Error ? cause.message : String(cause);
     }
-  } else if (!contact.company) error = "No company is linked";
-  else error = "No public company website or domain is available";
+  } catch (cause) {
+    error = cause instanceof Error ? cause.message : String(cause);
+  }
 
   const updated = await db.contact.findUniqueOrThrow({ where: { id: contactId }, include: { phoneNumbers: true } });
   const unresolved = missingLabels(updated);
-  await audit(db, {
-    actorId,
-    actorType: actorId ? "user" : "job",
-    action: "contact.import_research",
-    entityType: "contact",
-    entityId: contactId,
-    metadata: { before, filled, unresolved, sourceUrl, error },
-  });
-  return { contactId, before, filled, unresolved, sourceUrl, error };
+  await audit(db, { actorId, actorType: actorId ? "user" : "job", action: "contact.gemini_research", entityType: "contact", entityId: contactId, metadata: { before, filled, unresolved, sources: [...sources], model, error } });
+  return { contactId, before, filled, unresolved, sourceUrl: [...sources][0] ?? null, error };
 }
 
 export async function enrichImportBatch(db: Db, batchId: string, actorId: string | null) {
   const rows = await db.importRow.findMany({ where: { batchId, matchContactId: { not: null } }, select: { matchContactId: true } });
   const ids = [...new Set(rows.flatMap((row) => row.matchContactId ? [row.matchContactId] : []))];
   const results = [];
-  for (let i = 0; i < ids.length; i += 5) {
-    results.push(...await Promise.all(ids.slice(i, i + 5).map((id) => enrichImportedContact(db, id, actorId))));
-  }
-  await audit(db, { actorId, actorType: actorId ? "user" : "job", action: "import.research_complete", entityType: "import_batch", entityId: batchId, metadata: { contacts: results.length, completed: results.filter((r) => !r.unresolved.length).length, unresolved: results.filter((r) => r.unresolved.length).length } });
+  // Keep API usage and Google Search grounding costs predictable.
+  for (const id of ids) results.push(await enrichImportedContact(db, id, actorId));
+  await audit(db, { actorId, actorType: actorId ? "user" : "job", action: "import.gemini_research_complete", entityType: "import_batch", entityId: batchId, metadata: { contacts: results.length, completed: results.filter((r) => !r.unresolved.length).length, unresolved: results.filter((r) => r.unresolved.length).length } });
   return results;
 }
