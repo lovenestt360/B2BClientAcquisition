@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import type { PipelineStage } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { requirePermission } from "@/server/auth/current";
-import { createCompany, createContact, updateContactStage } from "@/server/crm/contacts";
+import { createCompany, createContact, updateContactStage, updateQualificationDetails } from "@/server/crm/contacts";
 import { safe, type ActionResult } from "./util";
 
 export async function createContactAction(_p: ActionResult | undefined, form: FormData): Promise<ActionResult> {
@@ -27,4 +27,22 @@ export async function changeStageAction(form: FormData) {
   const id = String(form.get("contactId"));
   await updateContactStage(prisma, id, String(form.get("stage")) as PipelineStage, user.id);
   revalidatePath(`/contacts/${id}`);
+}
+
+export async function updateQualificationDetailsAction(_p: ActionResult | undefined, form: FormData): Promise<ActionResult> {
+  const user = await requirePermission("crm.write");
+  const id = String(form.get("contactId"));
+  return safe(async () => {
+    await updateQualificationDetails(prisma, id, Object.fromEntries(form), user.id);
+    revalidatePath(`/contacts/${id}`);
+  }, "Qualification details updated");
+}
+
+export async function qualifyContactAction(_p: ActionResult | undefined, form: FormData): Promise<ActionResult> {
+  const user = await requirePermission("crm.write");
+  const id = String(form.get("contactId"));
+  return safe(async () => {
+    await updateContactStage(prisma, id, "QUALIFIED", user.id);
+    revalidatePath(`/contacts/${id}`);
+  }, "Contact marked as qualified");
 }

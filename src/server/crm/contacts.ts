@@ -6,6 +6,7 @@ import { AppError } from "../errors";
 import { normalizeCompanyName, normalizeDomain, normalizeEmail, normalizePersonName } from "../normalize";
 import { parsePhone } from "../phone";
 import { normalizeCountry } from "../import/validate";
+import { getQualificationReadiness } from "./qualification";
 
 export const contactInput = z.object({
   firstName: z.string().trim().min(1, "First name is required").max(100),
@@ -66,6 +67,11 @@ export async function createContact(db: Db, raw: unknown, actorId: string) {
 }
 
 export async function updateContactStage(db: Db, id: string, stage: PipelineStage, actorId: string) {
+  if (stage === "QUALIFIED") {
+    const readiness = await getQualificationReadiness(db, id);
+    const missing = readiness.checks.filter((check) => !check.passed).map((check) => check.label);
+    if (missing.length) throw new AppError(`Cannot qualify this contact yet. Complete: ${missing.join(", ")}`);
+  }
   const before = await db.contact.findUniqueOrThrow({ where: { id } });
   const c = await db.contact.update({ where: { id }, data: { stage } });
   await audit(db, {
@@ -76,6 +82,33 @@ export async function updateContactStage(db: Db, id: string, stage: PipelineStag
     metadata: { from: before.stage, to: stage },
   });
   return c;
+}
+
+const qualificationDetailsInput = z.object({
+  title: z.string().trim().max(150).optional().or(z.literal("")),
+  country: z.string().trim().optional().or(z.literal("")),
+  companyId: z.string().optional().or(z.literal("")),
+});
+
+export async function updateQualificationDetails(db: Db, id: string, raw: unknown, actorId: string) {
+  const input = qualificationDetailsInput.parse(raw);
+  const country = input.country ? normalizeCountry(input.country) : null;
+  if (input.country && !country) throw new AppError("Use a valid two-letter country code, for example ZA");
+  if (input.companyId && !(await db.company.findUnique({ where: { id: input.companyId }, select: { id: true } }))) {
+    throw new AppError("Selected company no longer exists");
+  }
+  const contact = await db.contact.update({
+    where: { id },
+    data: { title: input.title || null, country, companyId: input.companyId || null },
+  });
+  await audit(db, {
+    actorId,
+    action: "contact.qualification_details_update",
+    entityType: "contact",
+    entityId: id,
+    metadata: { title: contact.title, country: contact.country, companyId: contact.companyId },
+  });
+  return contact;
 }
 
 export async function listContacts(db: Db, opts: { q?: string; stage?: PipelineStage; page?: number; pageSize?: number }) {

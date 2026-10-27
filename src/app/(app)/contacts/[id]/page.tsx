@@ -3,11 +3,12 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/server/auth/current";
 import { can } from "@/server/auth/rbac";
-import { changeStageAction } from "@/app/actions/crm";
+import { changeStageAction, qualifyContactAction, updateQualificationDetailsAction } from "@/app/actions/crm";
 import { PageHeader, StageBadge, fmtDate } from "@/components/ui";
-import { ActionForm } from "@/components/ActionForm";
+import { ActionForm, Field } from "@/components/ActionForm";
 import { checkEligibility } from "@/server/compliance/eligibility";
 import { permissionAction, queueCallAction } from "@/app/actions/outreach";
+import { evaluateQualification } from "@/server/crm/qualification";
 
 const STAGES = ["NEW", "RESEARCHING", "QUALIFIED", "CONTACTED", "ENGAGED", "MEETING_BOOKED", "PROPOSAL", "WON", "LOST", "DISQUALIFIED"];
 
@@ -19,15 +20,14 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
     include: { company: true, phoneNumbers: { orderBy: { isPrimary: "desc" } } },
   });
   if (!c) notFound();
+  const readiness = evaluateQualification(c);
   const channels = ["SMS", "VOICE_MANUAL", "EMAIL", "VOICE_AUTOMATED"] as const;
   const elig = await Promise.all(channels.map((ch) => checkEligibility(prisma, { contactId: id, channel: ch })));
-  const permissions = await prisma.marketingPermission.findMany({ where: { contactId: id }, orderBy: { capturedAt: "desc" } });
-  const history = await prisma.auditLog.findMany({
-    where: { entityType: "contact", entityId: id },
-    orderBy: { createdAt: "desc" },
-    take: 20,
-    include: { actor: { select: { name: true } } },
-  });
+  const [permissions, history, companies] = await Promise.all([
+    prisma.marketingPermission.findMany({ where: { contactId: id }, orderBy: { capturedAt: "desc" } }),
+    prisma.auditLog.findMany({ where: { entityType: "contact", entityId: id }, orderBy: { createdAt: "desc" }, take: 20, include: { actor: { select: { name: true } } } }),
+    prisma.company.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true }, take: 500 }),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -78,6 +78,53 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
           )}
         </section>
       </div>
+
+      <section className="card space-y-3 text-sm" aria-labelledby="qualification-readiness">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 id="qualification-readiness" className="font-semibold">Qualification readiness</h2>
+            <p className="text-slate-600">Qualification confirms record quality. It does not grant consent or authorize outreach.</p>
+          </div>
+          <span className={`badge ${readiness.ready ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
+            {readiness.checks.filter((check) => check.passed).length}/{readiness.checks.length} complete
+          </span>
+        </div>
+        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {readiness.checks.map((check) => (
+            <li key={check.id} className={`rounded-lg border p-2 ${check.passed ? "border-green-200 bg-green-50" : "border-amber-200 bg-amber-50"}`}>
+              <div className="font-medium">{check.passed ? "✓" : "○"} {check.label}</div>
+              {!check.passed && <p className="mt-1 text-xs text-slate-600">{check.detail}</p>}
+            </li>
+          ))}
+        </ul>
+        {can(user.role, "crm.write") && (
+          <div className="grid gap-4 border-t border-slate-100 pt-3 lg:grid-cols-[1fr_auto]">
+            <ActionForm action={updateQualificationDetailsAction} submitLabel="Save Qualification Details" className="grid gap-3 sm:grid-cols-3">
+              <input type="hidden" name="contactId" value={c.id} />
+              <Field label="Job title" name="title" defaultValue={c.title ?? ""} autoComplete="organization-title" />
+              <Field label="Country code" name="country" defaultValue={c.country ?? ""} placeholder="ZA" autoComplete="country" />
+              <div>
+                <label className="label" htmlFor="qualificationCompanyId">Company</label>
+                <select className="input" id="qualificationCompanyId" name="companyId" defaultValue={c.companyId ?? ""}>
+                  <option value="">— none —</option>
+                  {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+                </select>
+              </div>
+            </ActionForm>
+            <div className="flex items-end">
+              {c.stage === "QUALIFIED" ? (
+                <p className="rounded-lg bg-blue-50 px-3 py-2 font-medium text-blue-800">Already qualified</p>
+              ) : readiness.ready ? (
+                <ActionForm action={qualifyContactAction} submitLabel="Mark Qualified" className="space-y-2">
+                  <input type="hidden" name="contactId" value={c.id} />
+                </ActionForm>
+              ) : (
+                <p className="max-w-56 text-xs text-slate-500">Complete every requirement before marking this contact as qualified.</p>
+              )}
+            </div>
+          </div>
+        )}
+      </section>
 
       <section className="card space-y-3 text-sm" aria-labelledby="outreach">
         <div className="flex flex-wrap items-center justify-between gap-2">
