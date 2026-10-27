@@ -27,13 +27,13 @@ export function ActionForm({
   );
 }
 
-export function Field({ label, name, type = "text", required, defaultValue, placeholder, step, min }: {
-  label: string; name: string; type?: string; required?: boolean; defaultValue?: string; placeholder?: string; step?: string; min?: string;
+export function Field({ label, name, type = "text", required, defaultValue, placeholder, step, min, autoComplete }: {
+  label: string; name: string; type?: string; required?: boolean; defaultValue?: string; placeholder?: string; step?: string; min?: string; autoComplete?: string;
 }) {
   return (
     <div>
       <label className="label" htmlFor={name}>{label}{required && " *"}</label>
-      <input className="input" id={name} name={name} type={type} required={required} defaultValue={defaultValue} placeholder={placeholder} step={step} min={min} inputMode={type === "number" && step ? "decimal" : undefined} />
+      <input className="input" id={name} name={name} type={type} required={required} defaultValue={defaultValue} placeholder={placeholder} step={step} min={min} autoComplete={autoComplete} spellCheck={type === "email" ? false : undefined} inputMode={type === "number" && step ? "decimal" : undefined} />
     </div>
   );
 }

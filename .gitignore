@@ -17,3 +17,4 @@ voice-services/tts/voices/*
 .next-vercel
 supabase/.temp/
 voice-services/**/.venv
+.vercel

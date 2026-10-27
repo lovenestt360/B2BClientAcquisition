@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assertCan, can } from "@/server/auth/rbac";
 import { hashPassword, verifyPassword } from "@/server/auth/password";
+import { emailChangeInput, passwordChangeInput } from "@/server/auth/account";
 import { decryptSecret, encryptSecret } from "@/server/crypto";
 
 describe("RBAC", () => {
@@ -22,6 +23,18 @@ describe("passwords", () => {
     expect(await verifyPassword("correct horse battery", h)).toBe(true);
     expect(await verifyPassword("wrong", h)).toBe(false);
     await expect(hashPassword("short")).rejects.toThrow();
+  });
+});
+
+describe("administrator credential changes", () => {
+  it("normalizes the new email and requires the current password", () => {
+    expect(emailChangeInput.parse({ email: "  Admin@Example.COM ", currentPassword: "current" }).email).toBe("admin@example.com");
+    expect(() => emailChangeInput.parse({ email: "not-an-email", currentPassword: "" })).toThrow();
+  });
+
+  it("requires a strong matching new password", () => {
+    expect(passwordChangeInput.parse({ currentPassword: "current", newPassword: "new password 123", confirmPassword: "new password 123" }).newPassword).toBe("new password 123");
+    expect(() => passwordChangeInput.parse({ currentPassword: "current", newPassword: "new password 123", confirmPassword: "different password" })).toThrow(/do not match/);
   });
 });
 
