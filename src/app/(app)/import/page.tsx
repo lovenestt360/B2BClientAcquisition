@@ -5,7 +5,7 @@ import { PageHeader, fmtDate } from "@/components/ui";
 import { uploadImportAction } from "@/app/actions/import";
 
 export default async function ImportPage() {
-  const batches = await prisma.importBatch.findMany({ orderBy: { createdAt: "desc" }, take: 20 });
+  const batches = await prisma.importBatch.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
   return (
     <div className="space-y-4">
       <PageHeader title="Import leads" subtitle="CSV or XLSX. Rows are validated and deduplicated before anything is saved." />
@@ -27,7 +27,7 @@ export default async function ImportPage() {
       </div>
       <section className="card overflow-x-auto p-0">
         <table className="tbl">
-          <thead><tr><th>File</th><th>Status</th><th>Rows</th><th className="hidden sm:table-cell">Created / merged / skipped / invalid</th><th className="hidden md:table-cell">When</th></tr></thead>
+          <thead><tr><th>File</th><th>Status</th><th>Rows</th><th className="hidden sm:table-cell">Created / merged / skipped / invalid</th><th className="hidden md:table-cell">When</th><th>Actions</th></tr></thead>
           <tbody>
             {batches.map((b) => (
               <tr key={b.id}>
@@ -36,6 +36,7 @@ export default async function ImportPage() {
                 <td>{b.totalRows}</td>
                 <td className="hidden sm:table-cell">{b.createdRows} / {b.mergedRows} / {b.skippedRows} / {b.invalidRows}</td>
                 <td className="hidden md:table-cell">{fmtDate(b.createdAt)}</td>
+                <td>{b.status === "COMMITTING" ? <span className="text-xs text-slate-500">In progress</span> : <Link className="text-sm font-medium text-red-700 hover:underline" href={`/import/${b.id}#delete-import`}>Delete…</Link>}</td>
               </tr>
             ))}
           </tbody>

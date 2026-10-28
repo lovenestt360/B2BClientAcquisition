@@ -89,7 +89,7 @@ export default async function ImportBatchPage({ params, searchParams }: { params
         </table>
       </div>
       {batch.status !== "COMMITTING" && (
-        <section className="card border-red-200 space-y-3">
+        <section id="delete-import" className="card scroll-mt-4 border-red-200 space-y-3">
           <div>
             <h2 className="font-semibold text-red-800">Delete import and its contacts</h2>
             <p className="text-sm text-slate-600">This permanently deletes this import and all {batch.createdRows} contacts originally created by it. Pre-existing contacts that were only merged are kept. This cannot be undone.</p>
