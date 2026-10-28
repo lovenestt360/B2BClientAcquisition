@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { PageHeader, Stat } from "@/components/ui";
 import Link from "next/link";
-import { cancelImportAction, commitImportAction, researchImportAction } from "@/app/actions/import";
+import { cancelImportAction, commitImportAction, deleteImportAction, researchImportAction } from "@/app/actions/import";
 import { evaluateQualification } from "@/server/crm/qualification";
 
 const ACTION_STYLE: Record<string, string> = {
@@ -88,6 +88,19 @@ export default async function ImportBatchPage({ params, searchParams }: { params
           </tbody>
         </table>
       </div>
+      {batch.status !== "COMMITTING" && (
+        <section className="card border-red-200 space-y-3">
+          <div>
+            <h2 className="font-semibold text-red-800">Delete import and its contacts</h2>
+            <p className="text-sm text-slate-600">This permanently deletes this import and all {batch.createdRows} contacts originally created by it. Pre-existing contacts that were only merged are kept. This cannot be undone.</p>
+          </div>
+          <form action={deleteImportAction} className="flex max-w-xl flex-col gap-2 sm:flex-row">
+            <input type="hidden" name="batchId" value={id} />
+            <input className="input" name="confirmation" required autoComplete="off" placeholder={`Type ${batch.fileName} to confirm`} aria-label="File name confirmation" />
+            <button className="btn-secondary whitespace-nowrap border-red-300 text-red-700">Delete permanently</button>
+          </form>
+        </section>
+      )}
     </div>
   );
 }

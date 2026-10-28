@@ -228,3 +228,44 @@ export async function cancelImport(db: Db, batchId: string, userId: string) {
   await db.importBatch.update({ where: { id: batchId }, data: { status: "CANCELLED" } });
   await audit(db, { actorId: userId, action: "import.cancel", entityType: "import_batch", entityId: batchId });
 }
+
+/**
+ * Permanently remove an import and contacts originally created by it. Contacts that existed
+ * before the import and were only merged are deliberately preserved.
+ */
+export async function deleteImportWithCreatedContacts(db: Db, batchId: string, confirmation: string, userId: string) {
+  const batch = await db.importBatch.findUnique({ where: { id: batchId } });
+  if (!batch) throw new AppError("Import batch not found", "not_found", 404);
+  if (batch.status === "COMMITTING") throw new AppError("This import is still committing and cannot be deleted");
+  if (confirmation !== batch.fileName) throw new AppError(`Type the exact file name "${batch.fileName}" to confirm deletion`);
+
+  const sourceRef = `import:${batchId}`;
+  return db.$transaction(async (tx) => {
+    const createdContacts = await tx.contact.findMany({ where: { sourceRef }, select: { id: true, companyId: true } });
+    const contactIds = createdContacts.map((contact) => contact.id);
+    const companyIds = [...new Set(createdContacts.flatMap((contact) => contact.companyId ? [contact.companyId] : []))];
+
+    // The durable audit entry is written before deleting the referenced records.
+    await audit(tx as Db, {
+      actorId: userId,
+      action: "import.delete_with_contacts",
+      entityType: "import_batch",
+      entityId: batchId,
+      metadata: { fileName: batch.fileName, sourceRef, deletedContactIds: contactIds, contactCount: contactIds.length },
+    });
+
+    if (contactIds.length) await tx.contact.deleteMany({ where: { id: { in: contactIds } } });
+
+    let deletedCompanies = 0;
+    for (const companyId of companyIds) {
+      const company = await tx.company.findUnique({ where: { id: companyId }, select: { sourceRef: true, _count: { select: { contacts: true } } } });
+      if (company?.sourceRef === sourceRef && company._count.contacts === 0) {
+        await tx.company.delete({ where: { id: companyId } });
+        deletedCompanies++;
+      }
+    }
+
+    await tx.importBatch.delete({ where: { id: batchId } });
+    return { deletedContacts: contactIds.length, deletedCompanies };
+  });
+}

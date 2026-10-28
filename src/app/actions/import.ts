@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { requirePermission } from "@/server/auth/current";
-import { cancelImport, createImportPreview } from "@/server/import/service";
+import { cancelImport, createImportPreview, deleteImportWithCreatedContacts } from "@/server/import/service";
 import { enqueue } from "@/server/jobs";
 import { safe, type ActionResult } from "./util";
 
@@ -42,4 +42,13 @@ export async function researchImportAction(form: FormData) {
   const batchId = String(form.get("batchId"));
   await enqueue(prisma, "import.enrich", { batchId, userId: user.id }, `import.enrich:${batchId}:${Date.now()}`).catch(() => undefined);
   revalidatePath(`/import/${batchId}`);
+}
+
+export async function deleteImportAction(form: FormData) {
+  const user = await requirePermission("import.run");
+  const batchId = String(form.get("batchId") ?? "");
+  const confirmation = String(form.get("confirmation") ?? "");
+  await deleteImportWithCreatedContacts(prisma, batchId, confirmation, user.id);
+  revalidatePath("/import");
+  redirect("/import");
 }
